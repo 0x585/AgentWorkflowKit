@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Managed by AgentWorkflowKit
-# Workflow-Version: 1.0.3
+# Workflow-Version: 1.0.4
 # Do not edit in this repository.
 # Source profile/file id: .git_scripts/public_work_register_sync.py
 from __future__ import annotations

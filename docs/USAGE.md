@@ -25,6 +25,7 @@
 - `full_codex_flow` profile 的 release 版本
 - 受管 git hooks
 - 受管 git 工作流脚本
+- 下游 `PublicWorkRegisterService` 运行时实现
 - 下游仓库配置
 - 发布、应用、校验工具
 
@@ -34,6 +35,7 @@
 
 - 中央仓库里的 git 工作流源码在 `.git_scripts/` 和 `.githooks/`
 - 模板产物在 `templates/full_codex_flow/files/.git_scripts/` 和 `templates/full_codex_flow/files/.githooks/`
+- 下游 `PublicWorkRegisterService` 模板在 `templates/full_codex_flow/files/src/main/python/public_work_register_service.py.tmpl`
 - 发布 release 时，`scripts/publish_release.py` 会先把源码导出回模板，再生成新的 release 工件
 
 说明：
@@ -43,6 +45,7 @@
 - 下游仓库原本用于应用自身逻辑的 `scripts/` 会继续保留
 - 只有 git 工作流相关的受管脚本会迁移到 `.git_scripts/`
 - 中央仓库自身的 `PublicWorkRegister` 脚本依赖 `src/main/python/agent_workflow_kit/tooling/service/public_work_register_service.py`
+- 下游仓库中的 `src/main/python/<python_package_name>/tooling/service/public_work_register_service.py` 也由中央仓库统一下发，不应在子项目里各自分叉维护
 
 ## 3. 目录说明
 
@@ -113,6 +116,7 @@ python3 scripts/apply_release.py --repo-root /Users/pi/PyCharmProject/AgentTask 
 
 - 生成下游仓库的 `.git_scripts/`
 - 生成下游仓库的 `.githooks/`
+- 生成下游仓库的 `src/main/python/<python_package_name>/tooling/service/public_work_register_service.py`
 - 清理旧版受管 `scripts/*` git 工作流脚本
 - 写入 `.git/info/exclude`
 - 设置 `core.hooksPath=.githooks`

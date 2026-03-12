@@ -20,7 +20,7 @@ class PublicWorkRegisterService:
     DEFAULT_REGISTER_ROOT = _DEFAULT_REGISTER_FALLBACK
     # Backward-compatible alias kept for downstream tests and overrides.
     DEFAULT_REGISTER_BASE = _DEFAULT_REGISTER_FALLBACK
-    ENV_KEY = "AGENT_WORKFLOW_KIT_PUBLIC_WORK_REGISTER_ROOT"
+    ENV_KEY = "{{ public_work_register_env_key }}"
     LOCK_TTL_SECONDS = 4 * 60 * 60
 
     def sync_pending_worklist(

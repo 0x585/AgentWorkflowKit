@@ -43,6 +43,7 @@ This repository is the central source of truth for downstream managed workflow f
 
 - Git workflow runtime sources live in `.git_scripts/` and `.githooks/`.
 - Templates under `templates/full_codex_flow/files/.git_scripts/` and `templates/full_codex_flow/files/.githooks/` are generated artifacts, not the primary editing target.
+- Downstream `PublicWorkRegisterService` runtime files are also managed here via the profile template at `templates/full_codex_flow/files/src/main/python/public_work_register_service.py.tmpl`.
 - If you change `.git_scripts/`, `.githooks/`, `profiles/`, `repos/`, or release tooling in `scripts/`, publish a new release before expecting downstream auto-apply to succeed.
 
 Required sequence for workflow changes:
@@ -119,7 +120,7 @@ Additional rules (enforced by the guard script):
 
 - Managed by `AgentWorkflowKit`
 - Profile: `full_codex_flow`
-- Workflow version: `1.0.3`
+- Workflow version: `1.0.4`
 - Central repo: `/Users/pi/PyCharmProject/AgentWorkflowKit`
 - Do not manually edit managed workflow files in this repository.
 - Repo-specific differences must be implemented through the central manifest, not by local customization.

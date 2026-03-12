@@ -121,6 +121,11 @@
     },
     {
       "type": "file",
+      "output": "src/main/python/{{ python_package_name }}/tooling/service/public_work_register_service.py",
+      "template": "templates/full_codex_flow/files/src/main/python/public_work_register_service.py.tmpl"
+    },
+    {
+      "type": "file",
       "output": ".git_scripts/exec_record_hygiene.py",
       "template": "templates/full_codex_flow/files/.git_scripts/exec_record_hygiene.py.tmpl",
       "executable": true

@@ -8,7 +8,7 @@ Central source of truth for managed git workflow assets.
 - Managed hooks and git workflow scripts
 - Repo-specific manifests for downstream repositories
 - Apply/check/publish tooling
-- Central repo runtime helpers used by managed scripts, including `PublicWorkRegister` support for this repository itself
+- Central repo runtime helpers used by managed scripts, including the shared `PublicWorkRegisterService` source for this repository and downstream apps
 
 ## Source Of Truth
 
@@ -49,7 +49,7 @@ The central repository itself uses `/Users/pi/PyCharmProject/PublicWorkRegister/
 
 - Managed by `AgentWorkflowKit`
 - Profile: `full_codex_flow`
-- Workflow version: `1.0.3`
+- Workflow version: `1.0.4`
 - Central repo: `/Users/pi/PyCharmProject/AgentWorkflowKit`
 - This repository must not locally customize managed git workflow files.
 - Managed entrypoints run locally first; only after a failure do they check the published central release, auto-upgrade if outdated, and retry once.
