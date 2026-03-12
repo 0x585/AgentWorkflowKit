@@ -13,6 +13,7 @@ from scripts.workflow_kit_lib import (
     check_repo_release,
     export_runtime_templates,
     inject_block,
+    load_json,
     load_repo_config,
     prepare_release_artifacts,
     render_repo_entries,
@@ -47,6 +48,42 @@ class WorkflowReleaseTest(unittest.TestCase):
     def copy_runtime_sources(self, target_root: Path) -> None:
         shutil.copytree(self.workflow_root / ".git_scripts", target_root / ".git_scripts")
         shutil.copytree(self.workflow_root / ".githooks", target_root / ".githooks")
+
+    def copy_workflow_repo(self, workflow_root: Path) -> None:
+        shutil.copytree(self.workflow_root / "profiles", workflow_root / "profiles")
+        shutil.copytree(self.workflow_root / "templates", workflow_root / "templates")
+        shutil.copytree(self.workflow_root / "repos", workflow_root / "repos")
+        shutil.copytree(self.workflow_root / "scripts", workflow_root / "scripts")
+
+    def write_temp_repo_config(self, workflow_root: Path, repo_root: Path) -> dict[str, str]:
+        repo_config = {
+            "repo_id": "TempRepo",
+            "profile": "full_codex_flow",
+            "expected_workspace_root": str(repo_root),
+            "default_branch": "main",
+            "python_package_name": "temp_repo",
+            "compile_main_path": "src/main/python/temp_repo",
+            "compile_test_path": "src/test/python/temp_repo",
+            "public_work_register_dir": str(repo_root.parent / "PublicWorkRegister" / "TempRepo"),
+        }
+        write_json(workflow_root / "repos" / "TempRepo.json", repo_config)
+        return repo_config
+
+    def publish_temp_release(self, workflow_root: Path, version: str) -> str:
+        payload, lock_payload = prepare_release_artifacts(
+            workflow_root=workflow_root,
+            profile="full_codex_flow",
+            version=version,
+            repo_ids=["TempRepo"],
+        )
+        write_release_artifacts(
+            workflow_root=workflow_root,
+            profile="full_codex_flow",
+            version=version,
+            release_payload=payload,
+            lock_payload=lock_payload,
+        )
+        return str(payload["release_manifest_hash"])
 
     def test_repo_specific_render_differs(self) -> None:
         agent_task = load_repo_config(self.workflow_root, "AgentTask")
@@ -281,6 +318,92 @@ class WorkflowReleaseTest(unittest.TestCase):
             target_script.write_text(target_script.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
             drift = check_repo_release(repo_root=repo_root, workflow_root=workflow_root, repo_id="TempRepo")
             self.assertEqual("drift", drift["status"])
+
+    def test_workflow_guard_skips_release_check_when_entry_succeeds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            repo_root.mkdir(parents=True)
+            subprocess.run(["git", "init", str(repo_root)], check=True, capture_output=True, text=True)
+            self.write_repo_docs(repo_root)
+            self.write_temp_repo_config(workflow_root, repo_root)
+
+            self.publish_temp_release(workflow_root, "1.0.0")
+            apply_release_to_repo(workflow_root=workflow_root, repo_root=repo_root, repo_id="TempRepo")
+            self.publish_temp_release(workflow_root, "1.0.1")
+
+            entry_script = repo_root / "entry.sh"
+            entry_script.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            entry_script.chmod(0o755)
+
+            result = subprocess.run(
+                [str(repo_root / ".git_scripts" / "workflow_guard.sh"), str(entry_script)],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode)
+            self.assertNotIn("Applying latest release", result.stderr)
+            install = load_json(repo_root / ".workflow-kit" / "install.json")
+            self.assertEqual("1.0.0", install["workflow_version"])
+
+    def test_workflow_guard_upgrades_after_entry_failure_then_retries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            repo_root.mkdir(parents=True)
+            subprocess.run(["git", "init", str(repo_root)], check=True, capture_output=True, text=True)
+            self.write_repo_docs(repo_root)
+            self.write_temp_repo_config(workflow_root, repo_root)
+
+            self.publish_temp_release(workflow_root, "1.0.0")
+            apply_release_to_repo(workflow_root=workflow_root, repo_root=repo_root, repo_id="TempRepo")
+            self.publish_temp_release(workflow_root, "1.0.1")
+
+            entry_script = repo_root / "entry.sh"
+            entry_script.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+
+version="$(python3 - <<'PY'
+import json
+from pathlib import Path
+
+print(json.loads(Path('.workflow-kit/install.json').read_text(encoding='utf-8'))['workflow_version'])
+PY
+)"
+printf '%s\n' "$version" >> entry.log
+if [[ "$version" == "1.0.1" ]]; then
+  exit 0
+fi
+exit 42
+""",
+                encoding="utf-8",
+            )
+            entry_script.chmod(0o755)
+
+            result = subprocess.run(
+                [str(repo_root / ".git_scripts" / "workflow_guard.sh"), str(entry_script)],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode)
+            self.assertIn("Applying latest release and retrying", result.stderr)
+            install = load_json(repo_root / ".workflow-kit" / "install.json")
+            self.assertEqual("1.0.1", install["workflow_version"])
+            entry_runs = (repo_root / "entry.log").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(["1.0.0", "1.0.1"], entry_runs)
 
 
 if __name__ == "__main__":

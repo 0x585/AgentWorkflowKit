@@ -46,10 +46,10 @@ python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/AgentTask 
 
 - Managed by `AgentWorkflowKit`
 - Profile: `full_codex_flow`
-- Workflow version: `1.0.2`
+- Workflow version: `1.0.3`
 - Central repo: `/Users/pi/PyCharmProject/AgentWorkflowKit`
 - This repository must not locally customize managed git workflow files.
-- If the installed version does not match the published central version, managed entrypoints auto-upgrade before continuing.
+- Managed entrypoints run locally first; only after a failure do they check the published central release, auto-upgrade if outdated, and retry once.
 - Manual resync:
 
 ```bash

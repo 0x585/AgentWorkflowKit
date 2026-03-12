@@ -1,0 +1,15 @@
+[1002] refactor(workflow): defer version checks and publish workflow 1.0.3
+
+# Changes
+# - run managed downstream entrypoints locally first and only check/apply the latest release after a failure
+# - make worktree publish resolve repo identity and canonical workflow root correctly
+# - scaffold AgentWorkflowKit public register runtime, tests, and publish full_codex_flow@1.0.3
+
+# Tests
+# - python3 -m unittest tests/test_workflow_release.py
+# - PYTHONPATH=src/main/python python3 -m unittest discover -s src/test/python/agent_workflow_kit/unit -p 'test_public_work_register_service.py'
+# - python3 -m compileall scripts tests .git_scripts src/main/python src/test/python
+# - python3 .git_scripts/public_work_register_sync.py
+
+# Risks
+# - downstream rollout should happen only after this branch is merged to main, so source metadata sees the published 1.0.3 release from the central primary root

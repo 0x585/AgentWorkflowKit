@@ -164,8 +164,9 @@ def build_context(
 ) -> dict[str, Any]:
     profile = repo_profile(repo_config)
     repo_id = str(repo_config["repo_id"])
+    workflow_repo_root = canonical_workflow_repo_root(workflow_root)
     return {
-        "workflow_repo_root": str(workflow_root),
+        "workflow_repo_root": str(workflow_repo_root),
         "workflow_version": workflow_version,
         "profile": profile,
         "release_manifest_hash": release_hash,
@@ -181,6 +182,18 @@ def build_context(
         "managed_entry_id": managed_entry.output,
         "managed_template_path": managed_entry.template,
     }
+
+
+def canonical_workflow_repo_root(workflow_root: Path) -> Path:
+    source_path = workflow_root / ".workflow-kit" / "source.json"
+    if source_path.is_file():
+        payload = load_json(source_path)
+        candidate = payload.get("workflow_repo_root") or payload.get("source_repo_root")
+        if candidate:
+            candidate_path = Path(str(candidate)).expanduser().resolve()
+            if candidate_path.is_dir():
+                return candidate_path
+    return workflow_root.resolve()
 
 
 def inject_block(original: str, start_marker: str, end_marker: str, managed_text: str) -> str:
@@ -345,8 +358,22 @@ def repo_ids_from_workflow_root(workflow_root: Path) -> list[str]:
     return sorted(path.stem for path in repo_dir.glob("*.json"))
 
 
+def repo_id_from_source_metadata(repo_root: Path) -> str | None:
+    source_path = repo_root / ".workflow-kit" / "source.json"
+    if not source_path.is_file():
+        return None
+    repo_id = load_json(source_path).get("repo_id")
+    if repo_id is None:
+        return None
+    return str(repo_id)
+
+
 def repo_id_for_root(workflow_root: Path, repo_root: Path) -> str:
     resolved_root = repo_root.resolve()
+    metadata_repo_id = repo_id_from_source_metadata(resolved_root)
+    if metadata_repo_id:
+        load_repo_config(workflow_root, metadata_repo_id)
+        return metadata_repo_id
     matches: list[str] = []
     for repo_id in repo_ids_from_workflow_root(workflow_root):
         repo_config = load_repo_config(workflow_root, repo_id)
@@ -482,7 +509,11 @@ def export_runtime_templates(
     profile: str = DEFAULT_PROFILE,
 ) -> list[str]:
     repo_config = load_repo_config(workflow_root, repo_id)
-    repo_root = Path(str(repo_config["expected_workspace_root"])).resolve()
+    current_repo_id = repo_id_from_source_metadata(workflow_root.resolve())
+    if current_repo_id == repo_id:
+        repo_root = workflow_root.resolve()
+    else:
+        repo_root = Path(str(repo_config["expected_workspace_root"])).resolve()
     exported_paths: list[str] = []
     for entry in managed_runtime_entries(workflow_root, profile):
         source_path = repo_root / entry.output

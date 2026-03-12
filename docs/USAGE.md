@@ -140,6 +140,8 @@ python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/AgentTask 
 - `drift`：本地受管文件被改动，和已安装 release 不一致
 - `invalid`：元数据或路径异常
 
+下游仓库的受管入口现在默认优先直接执行本地脚本，不会在每次调用前都回中央仓库做版本核对。只有入口执行失败时，`workflow_guard` 才会补做版本检查；如果发现只是版本落后，会自动应用最新已发布 release 并重试一次。
+
 ## 5. 中央仓库提交后的自动行为
 
 中央仓库自己的 `.githooks/post-commit` 会在提交后尝试执行：
