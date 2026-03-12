@@ -1,13 +1,8 @@
 ## Managed Git Workflow
 
-- Managed by `AgentWorkflowKit`
 - Profile: `{{ profile }}`
 - Workflow version: `{{ workflow_version }}`
-- Central repo: `{{ workflow_repo_root }}`
+- Workflow source metadata: `.workflow-kit/source.json`
 - This repository must not locally customize managed git workflow files.
 - Managed entrypoints run locally first; only after a failure do they check the published central release, auto-upgrade if outdated, and retry once.
-- Manual resync:
-
-```bash
-python3 {{ workflow_repo_root }}/scripts/apply_release.py --repo-root {{ expected_workspace_root }}
-```
+- Manual resync: rerun the workflow source repository recorded in `.workflow-kit/source.json` against this repository.

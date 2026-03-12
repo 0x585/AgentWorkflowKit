@@ -1,0 +1,14 @@
+[1006] fix(workflow): remove central repo name from downstream docs block
+
+# Changes
+# - make downstream AGENTS.md/README.md workflow blocks use generic wording instead of embedding AgentWorkflowKit
+# - add regression coverage for downstream rendered docs blocks
+# - publish full_codex_flow 1.0.5 and apply it to AgentWorkflowKit, AgentTask, and AgentTransitStation
+
+# Tests
+# - python3 -m unittest tests/test_workflow_release.py
+# - python3 -m compileall scripts tests
+# - python3 scripts/apply_downstreams.py
+
+# Risks
+# - downstream docs blocks no longer show the central repo path directly; manual resync guidance is now generic text

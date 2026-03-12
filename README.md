@@ -47,15 +47,10 @@ The central repository itself uses `/Users/pi/PyCharmProject/PublicWorkRegister/
 <!-- workflow-kit:readme:start -->
 ## Managed Git Workflow
 
-- Managed by `AgentWorkflowKit`
 - Profile: `full_codex_flow`
-- Workflow version: `1.0.4`
-- Central repo: `/Users/pi/PyCharmProject/AgentWorkflowKit`
+- Workflow version: `1.0.5`
+- Workflow source metadata: `.workflow-kit/source.json`
 - This repository must not locally customize managed git workflow files.
 - Managed entrypoints run locally first; only after a failure do they check the published central release, auto-upgrade if outdated, and retry once.
-- Manual resync:
-
-```bash
-python3 /Users/pi/PyCharmProject/AgentWorkflowKit/scripts/apply_release.py --repo-root /Users/pi/PyCharmProject/AgentWorkflowKit
-```
+- Manual resync: rerun the workflow source repository recorded in `.workflow-kit/source.json` against this repository.
 <!-- workflow-kit:readme:end -->

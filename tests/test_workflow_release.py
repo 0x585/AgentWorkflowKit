@@ -104,6 +104,8 @@ class WorkflowReleaseTest(unittest.TestCase):
         )
         task_assert = next(entry for entry in task_entries if entry["path"] == ".git_scripts/assert_workspace.sh")
         transit_assert = next(entry for entry in transit_entries if entry["path"] == ".git_scripts/assert_workspace.sh")
+        task_agents = next(entry for entry in task_entries if entry["path"] == "AGENTS.md")
+        task_readme = next(entry for entry in task_entries if entry["path"] == "README.md")
         task_service = next(
             entry
             for entry in task_entries
@@ -117,6 +119,10 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.assertIn("/Users/pi/PyCharmProject/AgentTask", task_assert["content"])
         self.assertIn("/Users/pi/PyCharmProject/AgentTransitStation", transit_assert["content"])
         self.assertNotEqual(task_assert["sha256"], transit_assert["sha256"])
+        self.assertNotIn("AgentWorkflowKit", task_agents["content"])
+        self.assertNotIn("/Users/pi/PyCharmProject/AgentWorkflowKit", task_agents["content"])
+        self.assertNotIn("AgentWorkflowKit", task_readme["content"])
+        self.assertNotIn("/Users/pi/PyCharmProject/AgentWorkflowKit", task_readme["content"])
         self.assertIn("AGENT_TASK_PUBLIC_WORK_REGISTER_ROOT", task_service["content"])
         self.assertIn("AGENT_TRANSIT_STATION_PUBLIC_WORK_REGISTER_ROOT", transit_service["content"])
         self.assertNotEqual(task_service["path"], transit_service["path"])
