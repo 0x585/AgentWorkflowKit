@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Managed by AgentWorkflowKit
-# Workflow-Version: 1.0.4
+# Workflow-Version: 1.0.5
 # Do not edit in this repository.
 # Source profile/file id: .git_scripts/assert_workspace.sh
 

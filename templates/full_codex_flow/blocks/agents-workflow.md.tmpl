@@ -1,9 +1,8 @@
-## Central Workflow Release (Managed)
+## Managed Workflow Release
 
-- Managed by `AgentWorkflowKit`
 - Profile: `{{ profile }}`
 - Workflow version: `{{ workflow_version }}`
-- Central repo: `{{ workflow_repo_root }}`
+- Workflow source metadata: `.workflow-kit/source.json`
 - Do not manually edit managed workflow files in this repository.
 - Repo-specific differences must be implemented through the central manifest, not by local customization.
 - Managed entrypoints run locally first; only after a failure do they check the published central release, auto-apply if outdated, and retry once.

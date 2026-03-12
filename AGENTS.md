@@ -116,12 +116,11 @@ Additional rules (enforced by the guard script):
 - Any workflow-source change that is handed to downstream apply without publishing a matching release first.
 
 <!-- workflow-kit:agents:start -->
-## Central Workflow Release (Managed)
+## Managed Workflow Release
 
-- Managed by `AgentWorkflowKit`
 - Profile: `full_codex_flow`
-- Workflow version: `1.0.4`
-- Central repo: `/Users/pi/PyCharmProject/AgentWorkflowKit`
+- Workflow version: `1.0.5`
+- Workflow source metadata: `.workflow-kit/source.json`
 - Do not manually edit managed workflow files in this repository.
 - Repo-specific differences must be implemented through the central manifest, not by local customization.
 - Managed entrypoints run locally first; only after a failure do they check the published central release, auto-apply if outdated, and retry once.
