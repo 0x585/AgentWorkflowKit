@@ -8,6 +8,7 @@ Central source of truth for managed git workflow assets.
 - Managed hooks and git workflow scripts
 - Repo-specific manifests for downstream repositories
 - Apply/check/publish tooling
+- Central repo runtime helpers used by managed scripts, including `PublicWorkRegister` support for this repository itself
 
 ## Source Of Truth
 
@@ -40,6 +41,8 @@ Check whether a downstream repository matches the published release:
 ```bash
 python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/AgentTask --json
 ```
+
+The central repository itself uses `/Users/pi/PyCharmProject/PublicWorkRegister/AgentWorkflowKit` as the canonical shared register root, and `AgentWorkflowKit-wt-*` worktrees resolve back to that same directory.
 
 <!-- workflow-kit:readme:start -->
 ## Managed Git Workflow

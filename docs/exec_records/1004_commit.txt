@@ -1,0 +1,15 @@
+[1004] fix(tooling): add workflow public register service
+
+# Changes
+# - add AgentWorkflowKit's own PublicWorkRegisterService and pending-worklist source file so managed register scripts can run locally
+# - canonicalize the shared register root via git common dir and document the project-level public_work_register_dir rule
+
+# Tests
+# - PYTHONPATH=src/main/python python3 -m unittest discover -s src/test/python/agent_workflow_kit/unit -p 'test_public_work_register_service.py'
+# - python3 -m unittest tests.test_workflow_release
+# - git rev-parse --path-format=absolute --git-common-dir
+# - PYTHONPATH=src/main/python python3 - <<'PY' ... PublicWorkRegisterService()._resolve_register_root(Path.cwd())
+# - WORKFLOW_GUARD_ACTIVE=1 ./.git_scripts/public_work_register_sync.py
+
+# Risks
+# - published workflow_guard.sh still has an unrelated syntax issue, so normal guarded entrypoints need a follow-up fix outside this change

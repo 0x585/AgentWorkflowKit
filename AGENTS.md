@@ -52,6 +52,8 @@ python3 scripts/export_templates.py --repo-id AgentWorkflowKit
 python3 scripts/publish_release.py --profile full_codex_flow --version <new-version>
 ```
 
+- `PublicWorkRegister` directory selection must stay bound to the canonical project directory, not a worktree-specific folder name.
+
 - `.githooks/post-commit` runs `python3 scripts/apply_downstreams.py`.
 - `scripts/apply_downstreams.py` refuses to run when current release artifacts are stale relative to the source repo.
 - Therefore, “changed workflow source but did not publish release yet” is an invalid handoff state for downstream sync.

@@ -42,6 +42,7 @@
 - 下游仓库中的 `.git_scripts/` 和 `.githooks/` 会写入 `.git/info/exclude`，不参与版本控制
 - 下游仓库原本用于应用自身逻辑的 `scripts/` 会继续保留
 - 只有 git 工作流相关的受管脚本会迁移到 `.git_scripts/`
+- 中央仓库自身的 `PublicWorkRegister` 脚本依赖 `src/main/python/agent_workflow_kit/tooling/service/public_work_register_service.py`
 
 ## 3. 目录说明
 
@@ -210,6 +211,8 @@ SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT=1 git commit ...
   pre-push 时的测试代码编译检查目录
 - `public_work_register_dir`
   对应公共工作登记目录
+  必须填写项目级固定目录，例如 `/Users/pi/PyCharmProject/PublicWorkRegister/MyNewApp`
+  不能填写 `MyNewApp-wt-*` 这类 worktree 专属目录；运行时会按 git common dir 归一回主项目目录
 
 ### 6.3 发布新版本
 

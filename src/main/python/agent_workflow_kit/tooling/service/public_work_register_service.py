@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any, Callable
-
 import fcntl
 import json
 import os
@@ -10,22 +8,23 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
-from agent_workflow_kit.base.types.json_types import JsonObject, JsonObjectList
+
+JsonObject = dict[str, Any]
 
 
 class PublicWorkRegisterService:
-    DEFAULT_REGISTER_ROOT: Any = Path("/Users/pi/PyCharmProject/PublicWorkRegister")
-    ENV_KEY: str = "AGENT_WORKFLOW_KIT_PUBLIC_WORK_REGISTER_ROOT"
-    LOCK_TTL_SECONDS: Any = 4 * 60 * 60
-    PRIORITY_RANK: dict[str, Any] = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+    DEFAULT_REGISTER_ROOT = Path("/Users/pi/PyCharmProject/PublicWorkRegister")
+    ENV_KEY = "AGENT_WORKFLOW_KIT_PUBLIC_WORK_REGISTER_ROOT"
+    LOCK_TTL_SECONDS = 4 * 60 * 60
 
     def sync_pending_worklist(
         self,
         repo_root: Path,
         released_work_ids: list[str] | None = None,
     ) -> JsonObject:
-        pending_items: Any = self._parse_pending_worklist(repo_root)
+        pending_items = self._parse_pending_worklist(repo_root)
         return self._mutate_state(
             repo_root=repo_root,
             pending_items=pending_items,
@@ -39,23 +38,23 @@ class PublicWorkRegisterService:
         worker_id: str | None = None,
         ttl_seconds: int | None = None,
     ) -> JsonObject:
-        pending_items: Any = self._parse_pending_worklist(repo_root)
-        ttl: Any = ttl_seconds if ttl_seconds and ttl_seconds > 0 else self.LOCK_TTL_SECONDS
-        now_ms: Any = self._now_ms()
-        selected_worker: Any = worker_id or self.build_worker_identity(repo_root)
+        pending_items = self._parse_pending_worklist(repo_root)
+        ttl = ttl_seconds if ttl_seconds and ttl_seconds > 0 else self.LOCK_TTL_SECONDS
+        now_ms = self._now_ms()
+        selected_worker = worker_id or self.build_worker_identity(repo_root)
 
         def mutate(state: JsonObject) -> JsonObject:
-            claims: Any = self._normalize_claims(state.get("claims"))
+            claims = self._normalize_claims(state.get("claims"))
             claims = self._prune_claims(claims, pending_items, [], now_ms)
-            selected_item: Any = self._select_claim_candidate(pending_items, claims, work_id)
+            selected_item = self._select_claim_candidate(pending_items, claims, work_id)
             if selected_item is None:
                 raise RuntimeError("no claimable pending work item found")
-            active_claim: Any = claims.get(selected_item["work_id"])
+            active_claim = claims.get(selected_item["work_id"])
             if active_claim and active_claim.get("worker_id") != selected_worker:
                 raise RuntimeError(
                     f"pending work item {selected_item['work_id']} is already claimed by {active_claim.get('worker_id')}"
                 )
-            branch_name: Any = self._current_branch(repo_root)
+            branch_name = self._current_branch(repo_root)
             claims[selected_item["work_id"]] = {
                 "work_id": selected_item["work_id"],
                 "worker_id": selected_worker,
@@ -68,11 +67,11 @@ class PublicWorkRegisterService:
                 "hostname": socket.gethostname(),
             }
             state["claims"] = claims
-            summary: Any = self._finalize_state(repo_root, state, pending_items, now_ms)
+            summary = self._finalize_state(repo_root, state, pending_items, now_ms)
             summary["selected_work_id"] = selected_item["work_id"]
             return summary
 
-        summary: Any = self._locked_state_apply(repo_root, mutate)
+        summary = self._locked_state_apply(repo_root, mutate)
         summary["claimed_work_id"] = summary.get("selected_work_id")
         return summary
 
@@ -81,15 +80,15 @@ class PublicWorkRegisterService:
         repo_root: Path,
         work_id: str | None = None,
     ) -> JsonObject:
-        pending_items: Any = self._parse_pending_worklist(repo_root)
-        now_ms: Any = self._now_ms()
+        pending_items = self._parse_pending_worklist(repo_root)
+        now_ms = self._now_ms()
 
         def mutate(state: JsonObject) -> JsonObject:
-            claims: Any = self._normalize_claims(state.get("claims"))
+            claims = self._normalize_claims(state.get("claims"))
             claims = self._prune_claims(claims, pending_items, [], now_ms)
             state["claims"] = claims
-            summary: Any = self._finalize_state(repo_root, state, pending_items, now_ms)
-            recommendation: Any = self._recommend_claim_candidate(pending_items, claims, work_id)
+            summary = self._finalize_state(repo_root, state, pending_items, now_ms)
+            recommendation = self._recommend_claim_candidate(pending_items, claims, work_id)
             summary.update(recommendation)
             return summary
 
@@ -102,17 +101,17 @@ class PublicWorkRegisterService:
         worker_id: str | None = None,
         force: bool = False,
     ) -> JsonObject:
-        pending_items: Any = self._parse_pending_worklist(repo_root)
-        selected_worker: Any = worker_id or self.build_worker_identity(repo_root)
-        now_ms: Any = self._now_ms()
+        pending_items = self._parse_pending_worklist(repo_root)
+        selected_worker = worker_id or self.build_worker_identity(repo_root)
+        now_ms = self._now_ms()
 
         def mutate(state: JsonObject) -> JsonObject:
-            claims: Any = self._normalize_claims(state.get("claims"))
+            claims = self._normalize_claims(state.get("claims"))
             claims = self._prune_claims(claims, pending_items, [], now_ms)
-            active_claim: Any = claims.get(work_id)
+            active_claim = claims.get(work_id)
             if active_claim is None:
                 state["claims"] = claims
-                summary: Any = self._finalize_state(repo_root, state, pending_items, now_ms)
+                summary = self._finalize_state(repo_root, state, pending_items, now_ms)
                 summary["released_work_id"] = work_id
                 summary["release_state"] = "NOT_FOUND"
                 return summary
@@ -130,7 +129,7 @@ class PublicWorkRegisterService:
         return self._locked_state_apply(repo_root, mutate)
 
     def build_worker_identity(self, repo_root: Path) -> str:
-        branch_name: Any = self._current_branch(repo_root)
+        branch_name = self._current_branch(repo_root)
         return ":".join(
             [
                 socket.gethostname(),
@@ -141,15 +140,15 @@ class PublicWorkRegisterService:
             ]
         )
 
-    def _locked_state_apply(self, repo_root: Path, mutate: Callable[[JsonObject], JsonObject]) -> JsonObject:
-        register_root: Any = self._resolve_register_root(repo_root)
+    def _locked_state_apply(self, repo_root: Path, mutate) -> JsonObject:
+        register_root = self._resolve_register_root(repo_root)
         register_root.mkdir(parents=True, exist_ok=True)
-        lock_path: Any = register_root / ".pending-work-register.lock"
-        state_path: Any = register_root / ".pending-work-register.state.json"
+        lock_path = register_root / ".pending-work-register.lock"
+        state_path = register_root / ".pending-work-register.state.json"
         with lock_path.open("a+", encoding="utf-8") as lock_file:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            state: Any = self._load_state(state_path)
-            summary: Any = mutate(state)
+            state = self._load_state(state_path)
+            summary = mutate(state)
             if "register_root" not in summary:
                 summary["register_root"] = str(register_root)
             return summary
@@ -157,13 +156,13 @@ class PublicWorkRegisterService:
     def _mutate_state(
         self,
         repo_root: Path,
-        pending_items: JsonObjectList,
+        pending_items: list[JsonObject],
         released_work_ids: list[str],
     ) -> JsonObject:
-        now_ms: Any = self._now_ms()
+        now_ms = self._now_ms()
 
         def mutate(state: JsonObject) -> JsonObject:
-            claims: Any = self._normalize_claims(state.get("claims"))
+            claims = self._normalize_claims(state.get("claims"))
             claims = self._prune_claims(claims, pending_items, released_work_ids, now_ms)
             state["claims"] = claims
             return self._finalize_state(repo_root, state, pending_items, now_ms)
@@ -174,22 +173,27 @@ class PublicWorkRegisterService:
         self,
         repo_root: Path,
         state: JsonObject,
-        pending_items: JsonObjectList,
+        pending_items: list[JsonObject],
         now_ms: int,
     ) -> JsonObject:
-        register_root: Any = self._resolve_register_root(repo_root)
+        register_root = self._resolve_register_root(repo_root)
+        project_name = self._resolve_project_dir_name(repo_root)
         register_root.mkdir(parents=True, exist_ok=True)
-        state_path: Any = register_root / ".pending-work-register.state.json"
-        markdown_path: Any = register_root / "pending-work-register.md"
-        claims: Any = self._normalize_claims(state.get("claims"))
+        state_path = register_root / ".pending-work-register.state.json"
+        markdown_path = register_root / "pending-work-register.md"
+        claims = self._normalize_claims(state.get("claims"))
         state["version"] = 1
         state["source_repo_root"] = str(repo_root)
         state["source_pending_worklist"] = str(repo_root / "docs" / "design" / "pending-worklist.md")
+        state["project_name"] = project_name
         state["synced_at_ms"] = now_ms
         state["pending_items"] = pending_items
         state["claims"] = claims
         state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        markdown_path.write_text(self._render_markdown(repo_root, pending_items, claims, now_ms), encoding="utf-8")
+        markdown_path.write_text(
+            self._render_markdown(repo_root, pending_items, claims, now_ms),
+            encoding="utf-8",
+        )
         return {
             "register_root": str(register_root),
             "register_markdown_path": str(markdown_path),
@@ -201,16 +205,16 @@ class PublicWorkRegisterService:
             "synced_at_ms": now_ms,
         }
 
-    def _parse_pending_worklist(self, repo_root: Path) -> JsonObjectList:
-        pending_path: Any = repo_root / "docs" / "design" / "pending-worklist.md"
+    def _parse_pending_worklist(self, repo_root: Path) -> list[JsonObject]:
+        pending_path = repo_root / "docs" / "design" / "pending-worklist.md"
         if not pending_path.is_file():
             raise RuntimeError(f"pending worklist not found: {pending_path}")
-        items: JsonObjectList = []
+        items: list[JsonObject] = []
         for raw_line in pending_path.read_text(encoding="utf-8").splitlines():
-            line: Any = raw_line.strip()
+            line = raw_line.strip()
             if not line.startswith("| W"):
                 continue
-            columns: list[Any] = [column.strip() for column in line.strip("|").split("|")]
+            columns = [column.strip() for column in line.strip("|").split("|")]
             if len(columns) < 6:
                 continue
             work_id, priority, decision, status, title, description = columns[:6]
@@ -239,19 +243,19 @@ class PublicWorkRegisterService:
     def _prune_claims(
         self,
         claims: JsonObject,
-        pending_items: JsonObjectList,
+        pending_items: list[JsonObject],
         released_work_ids: list[str],
         now_ms: int,
     ) -> JsonObject:
-        pending_ids: set[Any] = {str(item.get("work_id")) for item in pending_items}
-        released_ids: Any = set(released_work_ids)
+        pending_ids = {str(item.get("work_id")) for item in pending_items}
+        released_ids = set(released_work_ids)
         pruned: JsonObject = {}
         for work_id, claim in claims.items():
             if work_id not in pending_ids:
                 continue
             if work_id in released_ids:
                 continue
-            lease_until: Any = self._as_int(claim.get("lease_until_ms"))
+            lease_until = self._as_int(claim.get("lease_until_ms"))
             if lease_until is not None and lease_until < now_ms:
                 continue
             pruned[work_id] = claim
@@ -259,7 +263,7 @@ class PublicWorkRegisterService:
 
     def _select_claim_candidate(
         self,
-        pending_items: JsonObjectList,
+        pending_items: list[JsonObject],
         claims: JsonObject,
         work_id: str | None,
     ) -> JsonObject | None:
@@ -282,12 +286,12 @@ class PublicWorkRegisterService:
 
     def _recommend_claim_candidate(
         self,
-        pending_items: JsonObjectList,
+        pending_items: list[JsonObject],
         claims: JsonObject,
         work_id: str | None,
     ) -> JsonObject:
-        recommended_item: Any = self._select_claim_candidate(pending_items, claims, None)
-        skipped_claimed_work_ids: Any = self._collect_skipped_claimed_work_ids(pending_items, claims)
+        recommended_item = self._select_claim_candidate(pending_items, claims, None)
+        skipped_claimed_work_ids = self._collect_skipped_claimed_work_ids(pending_items, claims)
         summary: JsonObject = {
             "recommended_work_id": None,
             "recommended_work_item": None,
@@ -303,10 +307,10 @@ class PublicWorkRegisterService:
                 summary["recommended_work_item"] = dict(recommended_item)
             return summary
 
-        requested_item: Any = self._find_pending_item(pending_items, work_id)
+        requested_item = self._find_pending_item(pending_items, work_id)
         if requested_item is None:
             raise RuntimeError(f"pending work item {work_id} not found")
-        requested_claim: Any = claims.get(work_id)
+        requested_claim = claims.get(work_id)
         if not self._is_claimable(requested_item):
             summary["requested_work_claimable"] = False
             if requested_claim is not None:
@@ -331,7 +335,7 @@ class PublicWorkRegisterService:
     def _is_claimable(self, item: JsonObject) -> bool:
         return str(item.get("decision")) == "EXECUTE" and str(item.get("status")) != "BLOCKED"
 
-    def _find_pending_item(self, pending_items: JsonObjectList, work_id: str) -> JsonObject | None:
+    def _find_pending_item(self, pending_items: list[JsonObject], work_id: str) -> JsonObject | None:
         for item in pending_items:
             if str(item.get("work_id")) == work_id:
                 return item
@@ -339,12 +343,12 @@ class PublicWorkRegisterService:
 
     def _collect_skipped_claimed_work_ids(
         self,
-        pending_items: JsonObjectList,
+        pending_items: list[JsonObject],
         claims: JsonObject,
     ) -> list[str]:
         skipped: list[str] = []
         for item in pending_items:
-            work_id: Any = str(item.get("work_id"))
+            work_id = str(item.get("work_id"))
             if not self._is_claimable(item):
                 continue
             if work_id not in claims:
@@ -355,10 +359,10 @@ class PublicWorkRegisterService:
     def _load_state(self, state_path: Path) -> JsonObject:
         if not state_path.is_file():
             return {}
-        text: Any = state_path.read_text(encoding="utf-8").strip()
+        text = state_path.read_text(encoding="utf-8").strip()
         if not text:
             return {}
-        raw: Any = json.loads(text)
+        raw = json.loads(text)
         if isinstance(raw, dict):
             return dict(raw)
         return {}
@@ -366,13 +370,15 @@ class PublicWorkRegisterService:
     def _render_markdown(
         self,
         repo_root: Path,
-        pending_items: JsonObjectList,
+        pending_items: list[JsonObject],
         claims: JsonObject,
         now_ms: int,
     ) -> str:
-        lines: list[Any] = [
+        project_name = self._resolve_project_dir_name(repo_root)
+        lines: list[str] = [
             "# Public Work Register",
             "",
+            f"- Project: `{project_name}`",
             f"- Source repo: `{repo_root}`",
             f"- Synced at(ms): `{now_ms}`",
             f"- Total pending items: `{len(pending_items)}`",
@@ -389,7 +395,7 @@ class PublicWorkRegisterService:
                 ]
             )
             for work_id in sorted(claims):
-                claim: Any = claims[work_id]
+                claim = claims[work_id]
                 lines.append(
                     "| {work_id} | {worker} | {branch} | {worktree} | {lease_until} |".format(
                         work_id=work_id,
@@ -430,20 +436,54 @@ class PublicWorkRegisterService:
         return "\n".join(lines)
 
     def _resolve_register_root(self, repo_root: Path) -> Path:
-        override: Any = os.environ.get(self.ENV_KEY, "").strip()
+        override = os.environ.get(self.ENV_KEY, "").strip()
         if override:
             return Path(override).expanduser().resolve()
-        return (self.DEFAULT_REGISTER_ROOT / repo_root.name).resolve()
+        project_dir_name = self._resolve_project_dir_name(repo_root)
+        return (self.DEFAULT_REGISTER_ROOT / project_dir_name).resolve()
+
+    def _resolve_project_dir_name(self, repo_root: Path) -> str:
+        common_dir = self._resolve_git_common_dir(repo_root)
+        if common_dir is not None:
+            project_root = common_dir.parent
+            if project_root.name:
+                return str(project_root.name)
+        resolved_repo_root = repo_root.expanduser().resolve()
+        if resolved_repo_root.name:
+            return str(resolved_repo_root.name)
+        return str(repo_root.name or "repo")
+
+    def _resolve_git_common_dir(self, repo_root: Path) -> Path | None:
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "rev-parse",
+                    "--path-format=absolute",
+                    "--git-common-dir",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            common_dir_text = result.stdout.strip()
+            if not common_dir_text:
+                return None
+            return Path(common_dir_text).expanduser().resolve()
+        except Exception:
+            return None
 
     def _current_branch(self, repo_root: Path) -> str:
         try:
-            result: Any = subprocess.run(
+            result = subprocess.run(
                 ["git", "-C", str(repo_root), "branch", "--show-current"],
                 check=True,
                 capture_output=True,
                 text=True,
             )
-            branch_name: Any = result.stdout.strip()
+            branch_name = result.stdout.strip()
             return branch_name or "unknown"
         except Exception:
             return "unknown"
