@@ -1,0 +1,18 @@
+[1005] feat(workflow): centralize public work register runtime
+
+# Changes
+# - centralize downstream PublicWorkRegisterService into AgentWorkflowKit and manage it via full_codex_flow
+# - keep TransitStation interruption/worktree-claim capabilities while preserving Task/Transit compatibility overrides
+# - publish full_codex_flow 1.0.4 and apply it to AgentWorkflowKit, AgentTask, and AgentTransitStation
+
+# Tests
+# - python3 -m unittest tests/test_workflow_release.py
+# - PYTHONPATH=src/main/python python3 -m unittest discover -s src/test/python/agent_workflow_kit/unit -p 'test_public_work_register_service.py'
+# - python3 -m compileall src/main/python src/test/python scripts tests
+# - python3 scripts/apply_downstreams.py
+# - PYTHONPATH=src/main/python python3 -m unittest discover -s src/test/python/agent_task/unit -p 'test_public_work_register_service.py'
+# - python3 -m pytest src/test/python/agent_transit_station/unit/test_public_work_register_service.py
+# - python3 -m pytest src/test/python/agent_transit_station/unit/test_task_budget_guard_service.py
+
+# Risks
+# - downstream repos now rely on the central managed service; local forks in child apps will be overwritten by future apply_release

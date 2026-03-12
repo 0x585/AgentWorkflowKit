@@ -104,9 +104,22 @@ class WorkflowReleaseTest(unittest.TestCase):
         )
         task_assert = next(entry for entry in task_entries if entry["path"] == ".git_scripts/assert_workspace.sh")
         transit_assert = next(entry for entry in transit_entries if entry["path"] == ".git_scripts/assert_workspace.sh")
+        task_service = next(
+            entry
+            for entry in task_entries
+            if entry["path"] == "src/main/python/agent_task/tooling/service/public_work_register_service.py"
+        )
+        transit_service = next(
+            entry
+            for entry in transit_entries
+            if entry["path"] == "src/main/python/agent_transit_station/tooling/service/public_work_register_service.py"
+        )
         self.assertIn("/Users/pi/PyCharmProject/AgentTask", task_assert["content"])
         self.assertIn("/Users/pi/PyCharmProject/AgentTransitStation", transit_assert["content"])
         self.assertNotEqual(task_assert["sha256"], transit_assert["sha256"])
+        self.assertIn("AGENT_TASK_PUBLIC_WORK_REGISTER_ROOT", task_service["content"])
+        self.assertIn("AGENT_TRANSIT_STATION_PUBLIC_WORK_REGISTER_ROOT", transit_service["content"])
+        self.assertNotEqual(task_service["path"], transit_service["path"])
 
     def test_apply_rendered_entries_is_idempotent(self) -> None:
         repo_config = load_repo_config(self.workflow_root, "AgentTask").copy()
@@ -141,6 +154,8 @@ class WorkflowReleaseTest(unittest.TestCase):
         transit_paths = {entry["path"] for entry in lock_payload["repositories"]["AgentTransitStation"]["entries"]}
         self.assertIn(".git_scripts/new_exec.sh", task_paths)
         self.assertIn(".git_scripts/new_exec.sh", transit_paths)
+        self.assertIn("src/main/python/agent_task/tooling/service/public_work_register_service.py", task_paths)
+        self.assertIn("src/main/python/agent_transit_station/tooling/service/public_work_register_service.py", transit_paths)
 
     def test_inject_block_replaces_managed_region(self) -> None:
         original = "# Header\n\n<!-- workflow-kit:readme:start -->\nold\n<!-- workflow-kit:readme:end -->\n"
@@ -205,6 +220,18 @@ class WorkflowReleaseTest(unittest.TestCase):
             self.assertIn(str(legacy_file.resolve()), summary["removed_legacy_paths"])
             self.assertFalse(legacy_file.exists())
             self.assertTrue((repo_root / ".git_scripts" / "new_branch.sh").is_file())
+            self.assertTrue(
+                (
+                    repo_root
+                    / "src"
+                    / "main"
+                    / "python"
+                    / "temp_repo"
+                    / "tooling"
+                    / "service"
+                    / "public_work_register_service.py"
+                ).is_file()
+            )
 
             exclude_path = Path(
                 subprocess.run(

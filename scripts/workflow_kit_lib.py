@@ -165,6 +165,8 @@ def build_context(
     profile = repo_profile(repo_config)
     repo_id = str(repo_config["repo_id"])
     workflow_repo_root = canonical_workflow_repo_root(workflow_root)
+    python_package_name = str(repo_config["python_package_name"])
+    env_prefix = python_package_name.upper().replace(".", "_").replace("-", "_")
     return {
         "workflow_repo_root": str(workflow_repo_root),
         "workflow_version": workflow_version,
@@ -175,7 +177,8 @@ def build_context(
         "repo_name": repo_root.name,
         "expected_workspace_root": str(repo_config["expected_workspace_root"]),
         "default_branch": str(repo_config["default_branch"]),
-        "python_package_name": str(repo_config["python_package_name"]),
+        "python_package_name": python_package_name,
+        "public_work_register_env_key": f"{env_prefix}_PUBLIC_WORK_REGISTER_ROOT",
         "compile_main_path": str(repo_config["compile_main_path"]),
         "compile_test_path": str(repo_config["compile_test_path"]),
         "public_work_register_dir": str(repo_config["public_work_register_dir"]),
@@ -241,9 +244,10 @@ def render_entry(
         managed_entry=entry,
     )
     rendered = render_template_path(workflow_root, entry.template, context)
+    rendered_output = render_template_text(entry.output, context)
     payload = {
         "type": entry.entry_type,
-        "path": entry.output,
+        "path": rendered_output,
         "sha256": sha256_text(rendered),
         "content": rendered,
     }
