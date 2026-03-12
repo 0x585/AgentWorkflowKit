@@ -1,0 +1,10 @@
+{
+  "repo_id": "AgentTask",
+  "profile": "full_codex_flow",
+  "expected_workspace_root": "/Users/pi/PyCharmProject/AgentTask",
+  "default_branch": "master",
+  "python_package_name": "agent_task",
+  "compile_main_path": "src/main/python/agent_task",
+  "compile_test_path": "src/test/python/agent_task",
+  "public_work_register_dir": "/Users/pi/PyCharmProject/PublicWorkRegister/AgentTask"
+}

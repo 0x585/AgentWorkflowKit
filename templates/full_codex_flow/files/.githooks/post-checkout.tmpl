@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Managed by AgentWorkflowKit
+# Workflow-Version: {{ workflow_version }}
+# Do not edit in this repository.
+# Source profile/file id: {{ managed_entry_id }}
+
+__workflow_guard_root="$(git rev-parse --show-toplevel 2>/dev/null || { cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd; })"
+if [[ "${WORKFLOW_GUARD_ACTIVE:-0}" != "1" ]]; then
+  exec "$__workflow_guard_root/.git_scripts/workflow_guard.sh" "$0" "$@"
+fi
+unset __workflow_guard_root
+
+set -uo pipefail
+
+checkout_type="${3:-0}"
+if [[ "$checkout_type" != "1" ]]; then
+  exit 0
+fi
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -z "$ROOT" ]]; then
+  exit 0
+fi
+
+CURRENT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || true)"
+if [[ -z "$CURRENT_BRANCH" || "$CURRENT_BRANCH" != codex/* ]]; then
+  exit 0
+fi
+
+if ! git -C "$ROOT" rev-parse --verify --quiet HEAD >/dev/null; then
+  exit 0
+fi
+
+if ! "$ROOT/.git_scripts/assert_workspace.sh" >/dev/null 2>&1; then
+  echo "[post-checkout] Skip auto-sync: workspace guard not satisfied for $ROOT" >&2
+  exit 0
+fi
+
+DEFAULT_BRANCH="$("$ROOT/.git_scripts/git_default_branch.sh" "$ROOT")"
+echo "[post-checkout] Auto-sync check for ${CURRENT_BRANCH} ..."
+if "$ROOT/.git_scripts/session_sync.sh" "$DEFAULT_BRANCH"; then
+  echo "[post-checkout] Auto-sync completed for ${CURRENT_BRANCH}."
+  exit 0
+fi
+
+echo "[post-checkout] Warning: auto-sync failed for ${CURRENT_BRANCH}. Continue with caution." >&2
+echo "[post-checkout] Recommended: resolve workspace status, then run ./.git_scripts/session_sync.sh ${DEFAULT_BRANCH}" >&2
+if [[ -x "$ROOT/.git_scripts/session_sync_status.sh" ]]; then
+  "$ROOT/.git_scripts/session_sync_status.sh" "$DEFAULT_BRANCH" || true
+fi
+exit 0

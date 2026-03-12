@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Managed by AgentWorkflowKit
+# Workflow-Version: {{ workflow_version }}
+# Do not edit in this repository.
+# Source profile/file id: {{ managed_entry_id }}
+
+__workflow_guard_root="$(git rev-parse --show-toplevel 2>/dev/null || { cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd; })"
+if [[ "${WORKFLOW_GUARD_ACTIVE:-0}" != "1" ]]; then
+  exec "$__workflow_guard_root/.git_scripts/workflow_guard.sh" "$0" "$@"
+fi
+unset __workflow_guard_root
+
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+DEFAULT_BRANCH="$("$ROOT/.git_scripts/git_default_branch.sh" "$ROOT")"
+ASSERT_PURPOSE=code "$ROOT/.git_scripts/assert_workspace.sh"
+if [[ -x "$ROOT/scripts/python_bin.sh" ]]; then
+  export PYTHON_BIN="${PYTHON_BIN:-$("$ROOT/scripts/python_bin.sh")}"
+fi
+
+branch="$(git branch --show-current)"
+if [[ "$branch" == "$DEFAULT_BRANCH" ]]; then
+  echo "Direct commits to ${DEFAULT_BRANCH} are blocked." >&2
+  echo "Create a task branch first, e.g. ./.git_scripts/new_branch.sh \"branch-name-or-problem\"" >&2
+  exit 1
+fi
+
+if [[ "$branch" != codex/* ]]; then
+  echo "Commits are only allowed on codex/* branches." >&2
+  echo "Current branch: $branch" >&2
+  exit 1
+fi
+
+if [[ -x "$ROOT/.git_scripts/pending_worklist_autoclean.py" ]]; then
+  "$ROOT/.git_scripts/pending_worklist_autoclean.py"
+fi
+
+if [[ -x "$ROOT/.git_scripts/public_work_register_sync.py" ]]; then
+  "$ROOT/.git_scripts/public_work_register_sync.py"
+fi
+
+if [[ -x "$ROOT/.git_scripts/session_sync_status.sh" ]]; then
+  sync_info="$("$ROOT/.git_scripts/session_sync_status.sh" --porcelain "$DEFAULT_BRANCH" || true)"
+  sync_state="$(printf '%s\n' "$sync_info" | awk -F= '$1=="status" {print $2}')"
+  ahead="$(printf '%s\n' "$sync_info" | awk -F= '$1=="ahead" {print $2}')"
+  behind="$(printf '%s\n' "$sync_info" | awk -F= '$1=="behind" {print $2}')"
+  if [[ "$sync_state" == "behind" || "$sync_state" == "diverged" ]]; then
+    echo "[pre-commit] Warning: branch sync status is ${sync_state} (ahead=${ahead:-0}, behind=${behind:-0}) vs origin/${DEFAULT_BRANCH}." >&2
+    echo "[pre-commit] Recommended: ./.git_scripts/session_sync.sh ${DEFAULT_BRANCH}" >&2
+  fi
+fi

@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Managed by AgentWorkflowKit
+# Workflow-Version: 1.0.2
+# Do not edit in this repository.
+# Source profile/file id: .githooks/pre-push
+
+__workflow_guard_root="$(git rev-parse --show-toplevel 2>/dev/null || { cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd; })"
+if [[ "${WORKFLOW_GUARD_ACTIVE:-0}" != "1" ]]; then
+  exec "$__workflow_guard_root/.git_scripts/workflow_guard.sh" "$0" "$@"
+fi
+unset __workflow_guard_root
+
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+DEFAULT_BRANCH="$("$ROOT/.git_scripts/git_default_branch.sh" "$ROOT")"
+"$ROOT/.git_scripts/assert_workspace.sh"
+export PYTHONDONTWRITEBYTECODE=1
+if [[ -x "$ROOT/scripts/python_bin.sh" ]]; then
+  export PYTHON_BIN="${PYTHON_BIN:-$("$ROOT/scripts/python_bin.sh")}"
+fi
+
+run_compileall_checks() {
+  local python_bin="${PYTHON_BIN:-}"
+  if [[ -z "$python_bin" || ! -x "$python_bin" ]]; then
+    echo "pre-push: no supported Python found, skip compileall" >&2
+    return
+  fi
+  if [[ -d "$ROOT/src/main/python/agent_workflow_kit" ]]; then
+    "$python_bin" -m compileall "$ROOT/src/main/python/agent_workflow_kit" >/dev/null
+  fi
+  if [[ -d "$ROOT/src/test/python/agent_workflow_kit" ]]; then
+    "$python_bin" -m compileall "$ROOT/src/test/python/agent_workflow_kit" >/dev/null
+  fi
+}
+
+run_compileall_checks
+
+if [[ "${CODEX_AUTORELEASE_IN_PROGRESS:-0}" == "1" ]]; then
+  exit 0
+fi
+
+AUTO_BRANCH=""
+CURRENT_BRANCH="$(git branch --show-current || true)"
+while IFS= read -r update; do
+  [[ -z "$update" ]] && continue
+  local_ref="$(awk '{print $1}' <<<"$update")"
+  remote_ref="$(awk '{print $3}' <<<"$update")"
+  if [[ "$local_ref" == "HEAD" && -n "$CURRENT_BRANCH" ]]; then
+    local_ref="refs/heads/${CURRENT_BRANCH}"
+  fi
+  if [[ "$local_ref" == refs/heads/codex/* && "$remote_ref" == refs/heads/codex/* ]]; then
+    AUTO_BRANCH="${local_ref#refs/heads/}"
+    break
+  fi
+done
+
+if [[ -n "$AUTO_BRANCH" && -x "$ROOT/.git_scripts/session_push_autorelease.sh" ]]; then
+  echo "[pre-push] Auto release triggered for ${AUTO_BRANCH} -> ${DEFAULT_BRANCH}"
+  if env \
+    -u GIT_DIR \
+    -u GIT_WORK_TREE \
+    -u GIT_INDEX_FILE \
+    -u GIT_PREFIX \
+    CODEX_AUTORELEASE_IN_PROGRESS=1 \
+    "$ROOT/.git_scripts/session_push_autorelease.sh" --source-branch "$AUTO_BRANCH" --target "$DEFAULT_BRANCH"; then
+    echo "[pre-push] Auto release completed."
+    echo "[pre-push] Note: original push is intentionally canceled because release already handled push/merge/cleanup." >&2
+    exit 1
+  fi
+  exit 1
+fi
+
+exit 0

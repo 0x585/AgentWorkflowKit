@@ -1,0 +1,10 @@
+{
+  "repo_id": "AgentWorkflowKit",
+  "profile": "full_codex_flow",
+  "expected_workspace_root": "/Users/pi/PyCharmProject/AgentWorkflowKit",
+  "default_branch": "main",
+  "python_package_name": "agent_workflow_kit",
+  "compile_main_path": "src/main/python/agent_workflow_kit",
+  "compile_test_path": "src/test/python/agent_workflow_kit",
+  "public_work_register_dir": "/Users/pi/PyCharmProject/PublicWorkRegister/AgentWorkflowKit"
+}

@@ -1,0 +1,13 @@
+## Managed Git Workflow
+
+- Managed by `AgentWorkflowKit`
+- Profile: `{{ profile }}`
+- Workflow version: `{{ workflow_version }}`
+- Central repo: `{{ workflow_repo_root }}`
+- This repository must not locally customize managed git workflow files.
+- If the installed version does not match the published central version, managed entrypoints auto-upgrade before continuing.
+- Manual resync:
+
+```bash
+python3 {{ workflow_repo_root }}/scripts/apply_release.py --repo-root {{ expected_workspace_root }}
+```

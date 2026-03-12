@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Managed by AgentWorkflowKit
+# Workflow-Version: 1.0.2
+# Do not edit in this repository.
+# Source profile/file id: .githooks/post-commit
+
+__workflow_guard_root="$(git rev-parse --show-toplevel 2>/dev/null || { cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd; })"
+if [[ "${WORKFLOW_GUARD_ACTIVE:-0}" != "1" ]]; then
+  exec "$__workflow_guard_root/.git_scripts/workflow_guard.sh" "$0" "$@"
+fi
+unset __workflow_guard_root
+
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+DEFAULT_BRANCH="$("$ROOT/.git_scripts/git_default_branch.sh" "$ROOT")"
+CURRENT_BRANCH="$(git branch --show-current || true)"
+
+if [[ -f "$ROOT/scripts/apply_downstreams.py" ]]; then
+  if [[ "${SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT:-0}" == "1" ]]; then
+    echo "[post-commit] Downstream apply skipped by SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT=1"
+  else
+    python_bin="${PYTHON_BIN:-$(command -v python3 || true)}"
+    if [[ -n "$python_bin" && -x "$python_bin" ]]; then
+      echo "[post-commit] Applying managed workflow to downstream repositories..."
+      if ! "$python_bin" "$ROOT/scripts/apply_downstreams.py"; then
+        echo "[post-commit] Warning: downstream apply failed. Run python3 scripts/apply_downstreams.py manually." >&2
+      fi
+    else
+      echo "[post-commit] Warning: python3 not found, skip downstream apply." >&2
+    fi
+  fi
+fi
+
+if [[ -z "$CURRENT_BRANCH" ]]; then
+  exit 0
+fi
+
+if [[ "$CURRENT_BRANCH" == "$DEFAULT_BRANCH" ]]; then
+  exit 0
+fi
+
+if [[ "$CURRENT_BRANCH" != codex/* ]]; then
+  exit 0
+fi
+
+if [[ "${SKIP_AUTO_PUSH_AFTER_COMMIT:-0}" == "1" ]]; then
+  echo "[post-commit] Auto-push skipped by SKIP_AUTO_PUSH_AFTER_COMMIT=1"
+  exit 0
+fi
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "[post-commit] Working tree is dirty after commit, skip auto-push." >&2
+  exit 0
+fi
+
+echo "[post-commit] Auto-pushing ${CURRENT_BRANCH} to trigger pre-push auto-release..."
+
+set +e
+push_output="$(
+  env \
+    -u GIT_DIR \
+    -u GIT_WORK_TREE \
+    -u GIT_INDEX_FILE \
+    -u GIT_PREFIX \
+    git push 2>&1
+)"
+push_exit=$?
+set -e
+
+printf '%s\n' "$push_output"
+
+if [[ "$push_exit" -eq 0 ]]; then
+  exit 0
+fi
+
+if grep -q "\[pre-push\] Auto release completed\." <<<"$push_output" \
+  && grep -q "original push is intentionally canceled" <<<"$push_output"; then
+  echo "[post-commit] Auto-release completed. Original push cancellation is expected."
+  exit 0
+fi
+
+echo "[post-commit] Auto-push failed (exit=${push_exit}). Run git push manually to inspect." >&2
+exit 0

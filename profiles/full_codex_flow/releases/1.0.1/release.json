@@ -1,0 +1,9 @@
+{
+  "profile": "full_codex_flow",
+  "workflow_version": "1.0.1",
+  "repositories": [
+    "AgentTask",
+    "AgentTransitStation"
+  ],
+  "release_manifest_hash": "83df7e810a2b35d3ef8e666e3b0caaf0d4a3646b6baea154f03c5c0a81428a71"
+}

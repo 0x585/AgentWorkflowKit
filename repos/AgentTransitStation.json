@@ -1,0 +1,10 @@
+{
+  "repo_id": "AgentTransitStation",
+  "profile": "full_codex_flow",
+  "expected_workspace_root": "/Users/pi/PyCharmProject/AgentTransitStation",
+  "default_branch": "main",
+  "python_package_name": "agent_transit_station",
+  "compile_main_path": "src/main/python/agent_transit_station",
+  "compile_test_path": "src/test/python/agent_transit_station",
+  "public_work_register_dir": "/Users/pi/PyCharmProject/PublicWorkRegister/AgentTransitStation"
+}

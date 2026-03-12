@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Managed by AgentWorkflowKit
+# Workflow-Version: {{ workflow_version }}
+# Do not edit in this repository.
+# Source profile/file id: {{ managed_entry_id }}
+
+__workflow_guard_root="$(git rev-parse --show-toplevel 2>/dev/null || { cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd; })"
+if [[ "${WORKFLOW_GUARD_ACTIVE:-0}" != "1" ]]; then
+  exec "$__workflow_guard_root/.git_scripts/workflow_guard.sh" "$0" "$@"
+fi
+unset __workflow_guard_root
+
+set -euo pipefail
+
+msg_file="${1:-}"
+if [[ -z "$msg_file" || ! -f "$msg_file" ]]; then
+  echo "commit-msg hook: missing commit message file." >&2
+  exit 1
+fi
+
+first_line="$(head -n 1 "$msg_file" | tr -d '\r')"
+if [[ "$first_line" =~ ^(Merge |Revert |fixup!\ |squash!\ ) ]]; then
+  exit 0
+fi
+
+pattern='^\[[0-9]{4,}\] (feat|fix|refactor|docs|test|chore)\([a-z0-9_./-]+\): .+'
+if [[ ! "$first_line" =~ $pattern ]]; then
+  echo "Invalid commit message format." >&2
+  echo "Expected: [1001] type(scope): summary" >&2
+  echo "Example : [1001] docs(workflow): add execution id rules" >&2
+  exit 1
+fi
+
+ROOT="$(git rev-parse --show-toplevel)"
+exec_id="$(printf '%s' "$first_line" | sed -nE 's/^\[([0-9]{4,})\].*/\1/p')"
+if [[ -n "$exec_id" ]]; then
+  record_file="$ROOT/docs/exec_records/${exec_id}.md"
+  if [[ ! -f "$record_file" ]]; then
+    echo "Execution record missing: $record_file" >&2
+    echo "Run ./.git_scripts/new_exec.sh on your task branch before commit." >&2
+    exit 1
+  fi
+
+  if git log --all --format=%s | awk -v id="$exec_id" '
+      BEGIN { found = 0 }
+      $0 ~ "^\\[" id "\\] " { found = 1 }
+      END { exit(found ? 0 : 1) }
+    '; then
+    echo "Execution ID [${exec_id}] already exists in commit history." >&2
+    echo "Allocate a new one: ./.git_scripts/new_exec.sh" >&2
+    exit 1
+  fi
+fi

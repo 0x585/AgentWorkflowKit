@@ -1,0 +1,149 @@
+{
+  "profile": "full_codex_flow",
+  "managed_entries": [
+    {
+      "type": "file",
+      "output": ".workflow-kit/source.json",
+      "template": "templates/full_codex_flow/files/.workflow-kit/source.json.tmpl"
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/install.json",
+      "template": "templates/full_codex_flow/files/.workflow-kit/install.json.tmpl"
+    },
+    {
+      "type": "file",
+      "output": ".githooks/commit-msg",
+      "template": "templates/full_codex_flow/files/.githooks/commit-msg.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".githooks/post-checkout",
+      "template": "templates/full_codex_flow/files/.githooks/post-checkout.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".githooks/post-commit",
+      "template": "templates/full_codex_flow/files/.githooks/post-commit.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".githooks/pre-commit",
+      "template": "templates/full_codex_flow/files/.githooks/pre-commit.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".githooks/pre-push",
+      "template": "templates/full_codex_flow/files/.githooks/pre-push.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/workflow_guard.sh",
+      "template": "templates/full_codex_flow/files/.git_scripts/workflow_guard.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/assert_workspace.sh",
+      "template": "templates/full_codex_flow/files/.git_scripts/assert_workspace.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/setup_githooks.sh",
+      "template": "templates/full_codex_flow/files/.git_scripts/setup_githooks.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/git_default_branch.sh",
+      "template": "templates/full_codex_flow/files/.git_scripts/git_default_branch.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/new_branch.sh",
+      "template": "templates/full_codex_flow/files/.git_scripts/new_branch.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/new_worktree.sh",
+      "template": "templates/full_codex_flow/files/.git_scripts/new_worktree.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/new_exec.sh",
+      "template": "templates/full_codex_flow/files/.git_scripts/new_exec.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/session_sync.sh",
+      "template": "templates/full_codex_flow/files/.git_scripts/session_sync.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/session_sync_status.sh",
+      "template": "templates/full_codex_flow/files/.git_scripts/session_sync_status.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/session_push_autorelease.sh",
+      "template": "templates/full_codex_flow/files/.git_scripts/session_push_autorelease.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/session_release_resume.sh",
+      "template": "templates/full_codex_flow/files/.git_scripts/session_release_resume.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/public_work_register_sync.py",
+      "template": "templates/full_codex_flow/files/.git_scripts/public_work_register_sync.py.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/public_work_register_claim.py",
+      "template": "templates/full_codex_flow/files/.git_scripts/public_work_register_claim.py.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/exec_record_hygiene.py",
+      "template": "templates/full_codex_flow/files/.git_scripts/exec_record_hygiene.py.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".git_scripts/pending_worklist_autoclean.py",
+      "template": "templates/full_codex_flow/files/.git_scripts/pending_worklist_autoclean.py.tmpl",
+      "executable": true
+    },
+    {
+      "type": "block",
+      "output": "README.md",
+      "template": "templates/full_codex_flow/blocks/readme-workflow.md.tmpl",
+      "start_marker": "<!-- workflow-kit:readme:start -->",
+      "end_marker": "<!-- workflow-kit:readme:end -->"
+    },
+    {
+      "type": "block",
+      "output": "AGENTS.md",
+      "template": "templates/full_codex_flow/blocks/agents-workflow.md.tmpl",
+      "start_marker": "<!-- workflow-kit:agents:start -->",
+      "end_marker": "<!-- workflow-kit:agents:end -->"
+    }
+  ]
+}

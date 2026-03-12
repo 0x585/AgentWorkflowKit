@@ -1,0 +1,14 @@
+[1001] feat(workflow): bootstrap agent workflow kit repository
+
+# Changes
+# - bootstrap central workflow source, templates, release and downstream apply tooling
+# - migrate managed git runtime to .git_scripts and document maintainer workflow
+# - add exec record baseline and repository ignore rules
+
+# Tests
+# - python3 -m unittest tests/test_workflow_release.py
+# - python3 -m compileall scripts tests .git_scripts
+# - python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/AgentWorkflowKit --repo-id AgentWorkflowKit --json
+
+# Risks
+# - bootstrap commit establishes the initial default-branch baseline outside the normal codex worktree flow
