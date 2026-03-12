@@ -70,22 +70,31 @@ if [[ ! -f "$CHECK_SCRIPT" || ! -f "$APPLY_SCRIPT" ]]; then
 fi
 
 set +e
+env WORKFLOW_GUARD_ACTIVE=1 "$ENTRY_ABS" "$@"
+ENTRY_STATUS=$?
+set -e
+
+if [[ "$ENTRY_STATUS" -eq 0 ]]; then
+  exit 0
+fi
+
+set +e
 CHECK_OUTPUT="$("$PYTHON_BIN" "$CHECK_SCRIPT" --repo-root "$ROOT" --json 2>&1)"
 CHECK_STATUS=$?
 set -e
 
 case "$CHECK_STATUS" in
   0)
+    exit "$ENTRY_STATUS"
     ;;
   10)
-    echo "[workflow-guard] Managed workflow release is outdated. Applying latest release..."
+    echo "[workflow-guard] Entry script failed (exit=${ENTRY_STATUS}); installed release is outdated. Applying latest release and retrying..." >&2
     "$PYTHON_BIN" "$APPLY_SCRIPT" --repo-root "$ROOT"
+    exec env WORKFLOW_GUARD_ACTIVE=1 "$ENTRY_ABS" "$@"
     ;;
   *)
     printf '%s\n' "$CHECK_OUTPUT" >&2
-    echo "[workflow-guard] Managed workflow validation failed. Fix drift or metadata issues before continuing." >&2
+    echo "[workflow-guard] Entry script failed (exit=${ENTRY_STATUS}) and workflow validation also failed. Fix drift or metadata issues before continuing." >&2
     exit "$CHECK_STATUS"
     ;;
 esac
-
-exec env WORKFLOW_GUARD_ACTIVE=1 "$ENTRY_ABS" "$@"

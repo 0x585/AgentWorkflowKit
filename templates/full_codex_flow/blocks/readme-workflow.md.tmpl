@@ -5,7 +5,7 @@
 - Workflow version: `{{ workflow_version }}`
 - Central repo: `{{ workflow_repo_root }}`
 - This repository must not locally customize managed git workflow files.
-- If the installed version does not match the published central version, managed entrypoints auto-upgrade before continuing.
+- Managed entrypoints run locally first; only after a failure do they check the published central release, auto-upgrade if outdated, and retry once.
 - Manual resync:
 
 ```bash

@@ -6,4 +6,4 @@
 - Central repo: `{{ workflow_repo_root }}`
 - Do not manually edit managed workflow files in this repository.
 - Repo-specific differences must be implemented through the central manifest, not by local customization.
-- If managed entrypoints detect a version mismatch, they auto-apply the latest published release before continuing.
+- Managed entrypoints run locally first; only after a failure do they check the published central release, auto-apply if outdated, and retry once.

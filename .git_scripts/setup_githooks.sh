@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Managed by AgentWorkflowKit
-# Workflow-Version: 1.0.2
+# Workflow-Version: 1.0.3
 # Do not edit in this repository.
 # Source profile/file id: .git_scripts/setup_githooks.sh
 

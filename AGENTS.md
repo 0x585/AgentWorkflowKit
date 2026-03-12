@@ -117,9 +117,9 @@ Additional rules (enforced by the guard script):
 
 - Managed by `AgentWorkflowKit`
 - Profile: `full_codex_flow`
-- Workflow version: `1.0.2`
+- Workflow version: `1.0.3`
 - Central repo: `/Users/pi/PyCharmProject/AgentWorkflowKit`
 - Do not manually edit managed workflow files in this repository.
 - Repo-specific differences must be implemented through the central manifest, not by local customization.
-- If managed entrypoints detect a version mismatch, they auto-apply the latest published release before continuing.
+- Managed entrypoints run locally first; only after a failure do they check the published central release, auto-apply if outdated, and retry once.
 <!-- workflow-kit:agents:end -->

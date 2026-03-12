@@ -19,10 +19,25 @@ if os.environ.get("WORKFLOW_GUARD_ACTIVE") != "1":
         os.environ,
     )
 
+PACKAGE_ROOT = REPO_ROOT / "src" / "main" / "python" / "agent_workflow_kit"
+PENDING_WORKLIST_PATH = REPO_ROOT / "docs" / "design" / "pending-worklist.md"
+DEFAULT_PENDING_WORKLIST = """# 待处理清单
+
+## 当前清单
+
+| ID | Priority | Decision | Status | 工作项 | 说明 |
+|---|---|---|---|---|---|
+"""
+
 if str(REPO_ROOT / "src" / "main" / "python") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src" / "main" / "python"))
 
-from {{ python_package_name }}.tooling.service.public_work_register_service import PublicWorkRegisterService
+
+def ensure_runtime_dirs() -> None:
+    (PACKAGE_ROOT / "tooling" / "service").mkdir(parents=True, exist_ok=True)
+    PENDING_WORKLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if not PENDING_WORKLIST_PATH.exists():
+        PENDING_WORKLIST_PATH.write_text(DEFAULT_PENDING_WORKLIST, encoding="utf-8")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,6 +56,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+    ensure_runtime_dirs()
+    from {{ python_package_name }}.tooling.service.public_work_register_service import PublicWorkRegisterService
+
     service = PublicWorkRegisterService()
     if args.release and args.recommend_only:
       raise SystemExit("--release cannot be combined with --recommend-only")
