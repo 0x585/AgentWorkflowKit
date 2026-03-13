@@ -79,6 +79,12 @@
     },
     {
       "type": "file",
+      "output": ".git_scripts/ensure_shared_venv.sh",
+      "template": "templates/full_codex_flow/files/.git_scripts/ensure_shared_venv.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
       "output": ".git_scripts/new_exec.sh",
       "template": "templates/full_codex_flow/files/.git_scripts/new_exec.sh.tmpl",
       "executable": true

@@ -63,6 +63,10 @@ git fetch origin "$DEFAULT_BRANCH"
 git worktree add -b "$branch_name" "$worktree_path" "origin/${DEFAULT_BRANCH}"
 git -C "$EXPECTED_ROOT" config "branch.${branch_name}.remote" origin
 git -C "$EXPECTED_ROOT" config "branch.${branch_name}.merge" "refs/heads/${branch_name}"
+if [[ -x "$ROOT/.git_scripts/ensure_shared_venv.sh" ]]; then
+  "$ROOT/.git_scripts/ensure_shared_venv.sh" --target-root "$worktree_path" --quiet || \
+    echo "[new-worktree] Warning: failed to repair shared virtualenv link for ${worktree_path}" >&2
+fi
 
 exec_output="$(cd "$worktree_path" && "$ROOT/.git_scripts/new_exec.sh")"
 exec_id="$(printf '%s\n' "$exec_output" | awk -F': ' '/^Execution ID: / {print $2; exit}')"

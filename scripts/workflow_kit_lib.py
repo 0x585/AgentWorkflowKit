@@ -21,6 +21,7 @@ MANAGED_RUNTIME_BASENAMES = (
     "git_default_branch.sh",
     "new_branch.sh",
     "new_worktree.sh",
+    "ensure_shared_venv.sh",
     "new_exec.sh",
     "session_sync.sh",
     "session_sync_status.sh",
