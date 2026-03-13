@@ -7,7 +7,6 @@ from pathlib import Path
 
 from workflow_kit_lib import (
     DEFAULT_PROFILE,
-    apply_release_to_repo,
     load_current_lock,
     load_current_release,
     load_repo_config,
@@ -15,13 +14,14 @@ from workflow_kit_lib import (
     repo_id_for_root,
     repo_ids_from_workflow_root,
     repo_profile,
+    submit_release_to_repo_via_worktree_commit,
     workflow_root_from_script,
 )
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Apply the current managed workflow state from the central repo to downstream repositories."
+        description="Create local downstream worktree commits for repositories that need the current managed workflow release."
     )
     parser.add_argument("--profile", default=DEFAULT_PROFILE)
     parser.add_argument("--include-self", action="store_true")
@@ -45,6 +45,7 @@ def main() -> int:
             "Current release artifacts are stale. Publish a new release before applying downstream repositories."
         )
     summaries: list[dict[str, object]] = []
+    failed_repo_count = 0
 
     for repo_id in repo_ids_from_workflow_root(workflow_root):
         if not args.include_self and repo_id == source_repo_id:
@@ -52,28 +53,30 @@ def main() -> int:
         repo_config = load_repo_config(workflow_root, repo_id)
         if repo_profile(repo_config) != args.profile:
             continue
-        summaries.append(
-            apply_release_to_repo(
-                workflow_root=workflow_root,
-                repo_root=Path(str(repo_config["expected_workspace_root"])),
-                repo_id=repo_id,
-                profile=args.profile,
-            )
+        summary = submit_release_to_repo_via_worktree_commit(
+            workflow_root=workflow_root,
+            repo_root=Path(str(repo_config["expected_workspace_root"])),
+            repo_id=repo_id,
+            profile=args.profile,
         )
+        summaries.append(summary)
+        if summary.get("action") == "failed":
+            failed_repo_count += 1
 
     print(
         json.dumps(
             {
                 "profile": args.profile,
                 "source_repo_id": source_repo_id,
-                "applied_repo_count": len(summaries),
+                "processed_repo_count": len(summaries),
+                "failed_repo_count": failed_repo_count,
                 "repositories": summaries,
             },
             ensure_ascii=False,
             indent=2,
         )
     )
-    return 0
+    return 1 if failed_repo_count else 0
 
 
 if __name__ == "__main__":

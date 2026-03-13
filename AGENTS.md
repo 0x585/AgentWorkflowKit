@@ -57,6 +57,7 @@ python3 scripts/publish_release.py --profile full_codex_flow --version <new-vers
 
 - `.githooks/post-commit` runs `python3 scripts/apply_downstreams.py`.
 - `scripts/apply_downstreams.py` refuses to run when current release artifacts are stale relative to the source repo.
+- `scripts/apply_downstreams.py` now creates downstream local commits in child-repo worktrees; it does not push or auto-release those downstream commits.
 - Therefore, “changed workflow source but did not publish release yet” is an invalid handoff state for downstream sync.
 - Use `docs/USAGE.md` for the full release/apply/onboarding procedure.
 
@@ -70,6 +71,7 @@ git commit -m "[<exec_id>] <type>(<scope>): <summary>"
 
 - `.githooks/post-commit` first attempts downstream apply via `python3 scripts/apply_downstreams.py`.
 - `.githooks/post-commit` then auto-runs `git push` for `codex/*` branches by default.
+- Downstream apply creates local child-repo commits only; any resulting downstream worktree still requires later push/release handling in that child repo.
 - `.githooks/pre-push` auto-triggers `./.git_scripts/session_push_autorelease.sh` for `codex/*` pushes.
 - Flow: push `codex/*` -> merge into `<default-branch>` -> push `<default-branch>` -> delete remote/local source branch -> remove source worktree.
 - If auto-release reports `behind/diverged`, run `./.git_scripts/session_sync.sh <default-branch>` first, then retry push/release.

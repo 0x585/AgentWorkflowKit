@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
+import os
+import shutil
 import subprocess
 import tempfile
 import unittest
-import shutil
 from pathlib import Path
 
 from scripts.workflow_kit_lib import (
@@ -17,6 +19,7 @@ from scripts.workflow_kit_lib import (
     load_repo_config,
     prepare_release_artifacts,
     render_repo_entries,
+    submit_release_to_repo_via_worktree_commit,
     write_release_artifacts,
     write_json,
 )
@@ -44,6 +47,12 @@ class WorkflowReleaseTest(unittest.TestCase):
     def write_repo_docs(self, repo_root: Path) -> None:
         (repo_root / "README.md").write_text("# Temp Repo\n", encoding="utf-8")
         (repo_root / "AGENTS.md").write_text("# Temp Agents\n", encoding="utf-8")
+        exec_dir = repo_root / "docs" / "exec_records"
+        exec_dir.mkdir(parents=True, exist_ok=True)
+        (exec_dir / "INDEX.md").write_text(
+            "# Execution Records\n\n| ID | Date | Summary |\n|---|---|---|\n",
+            encoding="utf-8",
+        )
 
     def copy_runtime_sources(self, target_root: Path) -> None:
         shutil.copytree(self.workflow_root / ".git_scripts", target_root / ".git_scripts")
@@ -56,25 +65,98 @@ class WorkflowReleaseTest(unittest.TestCase):
         shutil.copytree(self.workflow_root / "scripts", workflow_root / "scripts")
 
     def write_temp_repo_config(self, workflow_root: Path, repo_root: Path) -> dict[str, str]:
+        resolved_repo_root = repo_root.resolve()
         repo_config = {
             "repo_id": "TempRepo",
             "profile": "full_codex_flow",
-            "expected_workspace_root": str(repo_root),
+            "expected_workspace_root": str(resolved_repo_root),
             "default_branch": "main",
             "python_package_name": "temp_repo",
             "compile_main_path": "src/main/python/temp_repo",
             "compile_test_path": "src/test/python/temp_repo",
-            "public_work_register_dir": str(repo_root.parent / "PublicWorkRegister" / "TempRepo"),
+            "public_work_register_dir": str((resolved_repo_root.parent / "PublicWorkRegister" / "TempRepo").resolve()),
         }
         write_json(workflow_root / "repos" / "TempRepo.json", repo_config)
         return repo_config
 
-    def publish_temp_release(self, workflow_root: Path, version: str) -> str:
+    def write_named_repo_config(
+        self,
+        workflow_root: Path,
+        repo_root: Path,
+        *,
+        repo_id: str,
+        default_branch: str = "main",
+    ) -> dict[str, str]:
+        resolved_repo_root = repo_root.resolve()
+        python_package_name = repo_id.lower()
+        repo_config = {
+            "repo_id": repo_id,
+            "profile": "full_codex_flow",
+            "expected_workspace_root": str(resolved_repo_root),
+            "default_branch": default_branch,
+            "python_package_name": python_package_name,
+            "compile_main_path": f"src/main/python/{python_package_name}",
+            "compile_test_path": f"src/test/python/{python_package_name}",
+            "public_work_register_dir": str((resolved_repo_root.parent / "PublicWorkRegister" / repo_id).resolve()),
+        }
+        write_json(workflow_root / "repos" / f"{repo_id}.json", repo_config)
+        return repo_config
+
+    def git(self, repo_root: Path, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", "-C", str(repo_root), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+    def init_git_repo(self, repo_root: Path, default_branch: str = "main") -> None:
+        subprocess.run(["git", "init", str(repo_root)], check=True, capture_output=True, text=True)
+        self.git(repo_root, "config", "user.name", "Workflow Test")
+        self.git(repo_root, "config", "user.email", "workflow@example.com")
+        self.git(repo_root, "checkout", "-b", default_branch)
+
+    def bootstrap_managed_repo(
+        self,
+        workflow_root: Path,
+        repo_root: Path,
+        *,
+        repo_id: str = "TempRepo",
+        default_branch: str = "main",
+        installed_version: str = "1.0.0",
+    ) -> dict[str, str]:
+        repo_root.mkdir(parents=True)
+        self.init_git_repo(repo_root, default_branch=default_branch)
+        self.write_repo_docs(repo_root)
+        repo_config = self.write_named_repo_config(
+            workflow_root,
+            repo_root,
+            repo_id=repo_id,
+            default_branch=default_branch,
+        )
+        self.publish_release_for_repo_ids(workflow_root, installed_version, [repo_id])
+        apply_release_to_repo(workflow_root=workflow_root, repo_root=repo_root, repo_id=repo_id)
+        self.git(repo_root, "add", "-A")
+        self.git(repo_root, "add", "-f", ".git_scripts", ".githooks")
+        self.git(repo_root, "commit", "--no-verify", "-m", "init")
+        remote_root = repo_root.parent / f"{repo_id}-remote.git"
+        subprocess.run(["git", "init", "--bare", str(remote_root)], check=True, capture_output=True, text=True)
+        self.git(repo_root, "remote", "add", "origin", str(remote_root))
+        self.git(repo_root, "push", "--no-verify", "-u", "origin", default_branch)
+        return repo_config
+
+    def publish_release_for_repo_ids(
+        self,
+        workflow_root: Path,
+        version: str,
+        repo_ids: list[str],
+    ) -> tuple[dict[str, object], dict[str, object]]:
         payload, lock_payload = prepare_release_artifacts(
             workflow_root=workflow_root,
             profile="full_codex_flow",
             version=version,
-            repo_ids=["TempRepo"],
+            repo_ids=repo_ids,
         )
         write_release_artifacts(
             workflow_root=workflow_root,
@@ -83,6 +165,10 @@ class WorkflowReleaseTest(unittest.TestCase):
             release_payload=payload,
             lock_payload=lock_payload,
         )
+        return payload, lock_payload
+
+    def publish_temp_release(self, workflow_root: Path, version: str) -> str:
+        payload, _ = self.publish_release_for_repo_ids(workflow_root, version, ["TempRepo"])
         return str(payload["release_manifest_hash"])
 
     def test_repo_specific_render_differs(self) -> None:
@@ -437,6 +523,170 @@ exit 42
             self.assertEqual("1.0.1", install["workflow_version"])
             entry_runs = (repo_root / "entry.log").read_text(encoding="utf-8").splitlines()
             self.assertEqual(["1.0.0", "1.0.1"], entry_runs)
+
+    def test_submit_release_to_repo_via_worktree_commit_skips_current_repo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+
+            summary = submit_release_to_repo_via_worktree_commit(
+                workflow_root=workflow_root,
+                repo_root=repo_root,
+                repo_id="TempRepo",
+            )
+
+            self.assertEqual("skip-current", summary["action"])
+            self.assertEqual("current", summary["status_before"])
+            self.assertIsNone(summary["worktree_path"])
+            self.assertIsNone(summary["commit_sha"])
+            worktree_count = len(
+                [
+                    line
+                    for line in self.git(repo_root, "worktree", "list", "--porcelain").stdout.splitlines()
+                    if line.startswith("worktree ")
+                ]
+            )
+            self.assertEqual(1, worktree_count)
+
+    def test_submit_release_to_repo_via_worktree_commit_creates_local_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            self.publish_temp_release(workflow_root, "1.0.1")
+
+            summary = submit_release_to_repo_via_worktree_commit(
+                workflow_root=workflow_root,
+                repo_root=repo_root,
+                repo_id="TempRepo",
+            )
+
+            self.assertEqual("committed", summary["action"])
+            self.assertEqual("outdated", summary["status_before"])
+            self.assertTrue(str(summary["branch"]).startswith("codex/workflow-release-1-0-1"))
+            self.assertTrue(Path(str(summary["worktree_path"])).is_dir())
+            self.assertTrue(str(summary["commit_sha"]))
+            worktree_root = Path(str(summary["worktree_path"]))
+            head_subject = self.git(worktree_root, "log", "-1", "--format=%s").stdout.strip()
+            self.assertEqual(summary["commit_message"], head_subject)
+            remote_heads = self.git(repo_root, "ls-remote", "--heads", "origin").stdout
+            self.assertIn("refs/heads/main", remote_heads)
+            self.assertNotIn("refs/heads/codex/workflow-release-1-0-1", remote_heads)
+
+    def test_submit_release_to_repo_via_worktree_commit_supports_dirty_primary_repo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            self.publish_temp_release(workflow_root, "1.0.1")
+            readme_path = repo_root / "README.md"
+            readme_path.write_text(readme_path.read_text(encoding="utf-8") + "dirty\n", encoding="utf-8")
+
+            summary = submit_release_to_repo_via_worktree_commit(
+                workflow_root=workflow_root,
+                repo_root=repo_root,
+                repo_id="TempRepo",
+            )
+
+            self.assertEqual("committed", summary["action"])
+            status_output = self.git(repo_root, "status", "--short").stdout
+            self.assertIn("README.md", status_output)
+
+    def test_submit_release_to_repo_via_worktree_commit_cleans_up_noop_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            managed_script = repo_root / ".git_scripts" / "new_branch.sh"
+            managed_script.write_text(
+                managed_script.read_text(encoding="utf-8") + "\n# local drift\n",
+                encoding="utf-8",
+            )
+
+            summary = submit_release_to_repo_via_worktree_commit(
+                workflow_root=workflow_root,
+                repo_root=repo_root,
+                repo_id="TempRepo",
+            )
+
+            self.assertEqual("noop-cleanup", summary["action"])
+            self.assertEqual("drift", summary["status_before"])
+            self.assertFalse(Path(str(summary["worktree_path"])).exists())
+            branch_list = self.git(repo_root, "branch", "--list", "codex/workflow-release-1-0-0").stdout.strip()
+            self.assertEqual("", branch_list)
+
+    def test_submit_release_to_repo_via_worktree_commit_reports_existing_branch_collision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            self.publish_temp_release(workflow_root, "1.0.1")
+            self.git(repo_root, "branch", "codex/workflow-release-1-0-1")
+
+            summary = submit_release_to_repo_via_worktree_commit(
+                workflow_root=workflow_root,
+                repo_root=repo_root,
+                repo_id="TempRepo",
+            )
+
+            self.assertEqual("failed", summary["action"])
+            self.assertIn("Branch already exists locally", str(summary["error"]))
+
+    def test_apply_downstreams_continues_after_failure_and_returns_nonzero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+            shutil.rmtree(workflow_root / "repos")
+            (workflow_root / "repos").mkdir(parents=True, exist_ok=True)
+            write_json(workflow_root / ".workflow-kit" / "source.json", {"repo_id": "WorkflowRepo"})
+            self.write_named_repo_config(
+                workflow_root,
+                workflow_root,
+                repo_id="WorkflowRepo",
+                default_branch="main",
+            )
+
+            good_repo_root = temp_root / "GoodRepo"
+            bad_repo_root = temp_root / "BadRepo"
+            self.bootstrap_managed_repo(workflow_root, good_repo_root, repo_id="GoodRepo", installed_version="1.0.0")
+            self.bootstrap_managed_repo(workflow_root, bad_repo_root, repo_id="BadRepo", installed_version="1.0.0")
+
+            self.publish_release_for_repo_ids(workflow_root, "1.0.1", ["WorkflowRepo", "GoodRepo", "BadRepo"])
+            missing_script = bad_repo_root / ".git_scripts" / "new_worktree.sh"
+            missing_script.unlink()
+
+            result = subprocess.run(
+                ["python3", str(workflow_root / "scripts" / "apply_downstreams.py")],
+                cwd=workflow_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(1, result.returncode)
+            payload = json.loads(result.stdout)
+            self.assertEqual(2, payload["processed_repo_count"])
+            self.assertEqual(1, payload["failed_repo_count"])
+            actions = {entry["repo_id"]: entry["action"] for entry in payload["repositories"]}
+            self.assertEqual("committed", actions["GoodRepo"])
+            self.assertEqual("failed", actions["BadRepo"])
 
 
 if __name__ == "__main__":

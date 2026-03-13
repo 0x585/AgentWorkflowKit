@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -700,3 +702,265 @@ def check_repo_release(
         "exit_code": exit_code,
         "mismatches": mismatches,
     }
+
+
+def _command_output_summary(process: subprocess.CompletedProcess[str]) -> str:
+    parts = [process.stdout.strip(), process.stderr.strip()]
+    return "\n".join(part for part in parts if part)
+
+
+def _run_command(
+    args: list[str],
+    *,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    process = subprocess.run(
+        args,
+        cwd=str(cwd) if cwd is not None else None,
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    if process.returncode == 0:
+        return process
+    output = _command_output_summary(process)
+    suffix = f"\n{output}" if output else ""
+    raise RuntimeError(f"command failed ({process.returncode}): {' '.join(args)}{suffix}")
+
+
+def _git_output(repo_root: Path, *args: str, env: dict[str, str] | None = None) -> str:
+    return _run_command(["git", "-C", str(repo_root), *args], env=env).stdout.strip()
+
+
+def _git_status_paths(repo_root: Path) -> list[str]:
+    status_output = _git_output(repo_root, "status", "--short")
+    paths: list[str] = []
+    for raw_line in status_output.splitlines():
+        line = raw_line.rstrip()
+        if not line:
+            continue
+        path = line[3:]
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        paths.append(path)
+    return paths
+
+
+def _downstream_issue_slug(workflow_version: str) -> str:
+    normalized = re.sub(r"[^0-9A-Za-z]+", "-", workflow_version).strip("-").lower()
+    suffix = normalized or "current"
+    return f"workflow-release-{suffix}"
+
+
+def _parse_new_worktree_output(output: str) -> tuple[str, Path, str]:
+    branch_match = re.search(r"(?m)^  branch:\s+(.+)$", output)
+    path_match = re.search(r"(?m)^  path:\s+(.+)$", output)
+    exec_match = re.search(r"(?m)^  exec:\s+([0-9]{4,})$", output)
+    if branch_match is None or path_match is None or exec_match is None:
+        raise RuntimeError(f"unable to parse downstream worktree creation output:\n{output.strip()}")
+    return branch_match.group(1).strip(), Path(path_match.group(1).strip()), exec_match.group(1).strip()
+
+
+def _cleanup_worktree(primary_repo_root: Path, worktree_root: Path, branch: str) -> None:
+    errors: list[str] = []
+    if worktree_root.exists():
+        try:
+            _run_command(["git", "-C", str(primary_repo_root), "worktree", "remove", "--force", str(worktree_root)])
+        except Exception as exc:  # pragma: no cover - best effort cleanup
+            errors.append(str(exc))
+    try:
+        _run_command(["git", "-C", str(primary_repo_root), "branch", "-D", branch])
+    except Exception as exc:  # pragma: no cover - best effort cleanup
+        errors.append(str(exc))
+    if errors:
+        raise RuntimeError("\n".join(errors))
+
+
+def _render_changed_paths(paths: list[str], limit: int = 20) -> str:
+    visible = paths[:limit]
+    lines = [f"- {path}" for path in visible]
+    if len(paths) > limit:
+        lines.append(f"- ... ({len(paths) - limit} more)")
+    return "\n".join(lines) if lines else "- none"
+
+
+def _write_downstream_exec_record(
+    worktree_root: Path,
+    *,
+    exec_id: str,
+    repo_id: str,
+    profile: str,
+    workflow_version: str,
+    default_branch: str,
+    changed_paths: list[str],
+    commit_message: str,
+) -> None:
+    today = date.today().isoformat()
+    changed_path_block = _render_changed_paths(changed_paths)
+    record_path = worktree_root / "docs" / "exec_records" / f"{exec_id}.md"
+    commit_template_path = worktree_root / "docs" / "exec_records" / f"{exec_id}_commit.txt"
+    record_path.write_text(
+        (
+            f"# {exec_id}\n\n"
+            "## 完成定义（DoD）\n\n"
+            "- [x] 需求目标已明确（本次只做本地提交，不自动 push/release）\n"
+            "- [ ] 变更验证命令已执行并记录\n"
+            f"- [ ] 若为代码任务：已合并到目标分支并完成分支清理（目标分支：{default_branch}）\n\n"
+            "## 需求摘要\n\n"
+            f"将中央仓库当前发布的 `{profile}@{workflow_version}` 应用到 `{repo_id}`，并在子仓库 worktree 中生成本地提交。\n\n"
+            "## 变更文件\n\n"
+            f"{changed_path_block}\n\n"
+            "## 变更说明\n\n"
+            f"- 通过受管 worktree 提交流程下推 `{profile}@{workflow_version}`。\n"
+            "- 保留 worktree 供后续人工检查、push 或 release。\n\n"
+            "## 验证结果\n\n"
+            "- 未自动执行测试；仅验证受管文件已生成本地提交。\n\n"
+            "## 完成待办项\n\n"
+            "- 无\n\n"
+            "## 当前占用待办项\n\n"
+            "- 本地 worktree 待后续 push/release。\n\n"
+            "## 风险与回滚\n\n"
+            "- 风险：当前变更仅存在于本地 worktree，尚未推送。\n"
+            "- 回滚：删除该 worktree 与本地分支，或在子仓库中回退此 commit。\n"
+            f"\n## 记录时间\n\n- {today}\n"
+        ),
+        encoding="utf-8",
+    )
+    commit_template_path.write_text(
+        (
+            f"{commit_message}\n\n"
+            "# Changes\n"
+            f"# - apply {profile}@{workflow_version} into downstream repo {repo_id}\n"
+            "# - keep the resulting worktree local for later push/release\n\n"
+            "# Tests\n"
+            "# - not run (local downstream commit only)\n\n"
+            "# Risks\n"
+            "# - downstream worktree remains local and still needs manual push/release\n"
+        ),
+        encoding="utf-8",
+    )
+
+
+def submit_release_to_repo_via_worktree_commit(
+    workflow_root: Path,
+    repo_root: Path,
+    repo_id: str | None = None,
+    profile: str = DEFAULT_PROFILE,
+) -> dict[str, Any]:
+    resolved_repo_root = repo_root.expanduser().resolve()
+    summary: dict[str, Any] = {
+        "repo_root": str(resolved_repo_root),
+        "repo_id": repo_id or resolved_repo_root.name,
+        "profile": profile,
+        "workflow_version": "",
+        "installed_version": "",
+        "current_version": "",
+        "status_before": "unknown",
+        "action": "failed",
+        "worktree_path": None,
+        "branch": None,
+        "exec_id": None,
+        "commit_sha": None,
+        "commit_message": None,
+        "changed_paths": [],
+        "error": None,
+    }
+
+    try:
+        release_status = check_repo_release(
+            repo_root=resolved_repo_root,
+            workflow_root=workflow_root,
+            repo_id=repo_id,
+        )
+        resolved_repo_id = str(release_status["repo_id"])
+        resolved_profile = str(release_status["profile"])
+        current_release = load_current_release(workflow_root, resolved_profile)
+        workflow_version = str(current_release["workflow_version"])
+        summary.update(
+            {
+                "repo_id": resolved_repo_id,
+                "profile": resolved_profile,
+                "workflow_version": workflow_version,
+                "installed_version": str(release_status["installed_version"]),
+                "current_version": str(release_status["current_version"]),
+                "status_before": str(release_status["status"]),
+            }
+        )
+
+        if release_status["status"] == "current":
+            summary["action"] = "skip-current"
+            return summary
+
+        repo_config = load_repo_config(workflow_root, resolved_repo_id)
+        default_branch = str(repo_config["default_branch"])
+        worktree_env = {**os.environ, "WORKFLOW_GUARD_ACTIVE": "1"}
+        script_path = resolved_repo_root / ".git_scripts" / "new_worktree.sh"
+        if not script_path.is_file():
+            raise FileNotFoundError(f"downstream worktree script not found: {script_path}")
+
+        issue_slug = _downstream_issue_slug(workflow_version)
+        worktree_process = _run_command(
+            [str(script_path), issue_slug],
+            cwd=resolved_repo_root,
+            env=worktree_env,
+        )
+        branch, worktree_root, exec_id = _parse_new_worktree_output(
+            _command_output_summary(worktree_process) or worktree_process.stdout
+        )
+        summary.update(
+            {
+                "worktree_path": str(worktree_root),
+                "branch": branch,
+                "exec_id": exec_id,
+            }
+        )
+
+        baseline_paths = set(_git_status_paths(worktree_root))
+        apply_release_to_repo(
+            workflow_root=workflow_root,
+            repo_root=worktree_root,
+            repo_id=resolved_repo_id,
+            profile=resolved_profile,
+        )
+        after_paths = set(_git_status_paths(worktree_root))
+        managed_release_paths = sorted(after_paths - baseline_paths)
+        if not managed_release_paths:
+            _cleanup_worktree(resolved_repo_root, worktree_root, branch)
+            summary["action"] = "noop-cleanup"
+            return summary
+
+        changed_paths = sorted(after_paths)
+        commit_message = f"[{exec_id}] chore(workflow): apply {resolved_profile}@{workflow_version}"
+        _write_downstream_exec_record(
+            worktree_root,
+            exec_id=exec_id,
+            repo_id=resolved_repo_id,
+            profile=resolved_profile,
+            workflow_version=workflow_version,
+            default_branch=default_branch,
+            changed_paths=changed_paths,
+            commit_message=commit_message,
+        )
+        commit_env = {
+            **os.environ,
+            "WORKFLOW_GUARD_ACTIVE": "1",
+            "SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT": "1",
+            "SKIP_AUTO_PUSH_AFTER_COMMIT": "1",
+        }
+        _run_command(["git", "-C", str(worktree_root), "add", "-A"], env=commit_env)
+        _run_command(["git", "-C", str(worktree_root), "commit", "-m", commit_message], env=commit_env)
+        commit_sha = _git_output(worktree_root, "rev-parse", "HEAD")
+        summary.update(
+            {
+                "action": "committed",
+                "commit_sha": commit_sha,
+                "commit_message": commit_message,
+                "changed_paths": changed_paths,
+            }
+        )
+        return summary
+    except Exception as exc:
+        summary["error"] = str(exc)
+        return summary

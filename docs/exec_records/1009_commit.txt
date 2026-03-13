@@ -1,0 +1,14 @@
+[1009] feat(workflow): commit downstream apply through local worktrees
+
+# Changes
+# - switch apply_downstreams.py from in-place downstream mutation to local worktree commit generation
+# - add downstream worktree/commit integration tests and publish full_codex_flow 1.0.7
+
+# Tests
+# - python3 -m compileall scripts tests
+# - python3 -m unittest tests.test_workflow_release
+# - python3 scripts/export_templates.py --repo-id AgentWorkflowKit
+# - python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.7
+
+# Risks
+# - downstream apply now leaves local child-repo worktrees behind for later push/release
