@@ -1,0 +1,16 @@
+[1012] fix(workflow): bootstrap downstream venv repair after release restore
+
+# Changes
+# - maintain worktree-local excludes for shared .venv links so auto sync does not trip over fresh worktrees
+# - bootstrap old downstream runtimes by skipping shared .venv linking until the current release is applied
+# - publish full_codex_flow 1.0.10 and verify real downstream local commits for AgentTask and AgentTransitStation
+
+# Tests
+# - python3 -m compileall .git_scripts scripts tests
+# - python3 -m unittest tests.test_workflow_release
+# - python3 scripts/export_templates.py --repo-id AgentWorkflowKit
+# - python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.10
+# - python3 scripts/apply_downstreams.py
+
+# Risks
+# - downstream repos now have local workflow-release-1-0-10 worktrees that still need later push/release handling

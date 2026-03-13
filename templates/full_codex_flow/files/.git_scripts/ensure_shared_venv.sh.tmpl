@@ -12,6 +12,9 @@ unset __workflow_guard_root
 
 set -euo pipefail
 
+WORKFLOW_EXCLUDE_MARKER_START="# workflow-kit managed excludes start"
+WORKFLOW_EXCLUDE_MARKER_END="# workflow-kit managed excludes end"
+
 usage() {
   cat <<'USAGE'
 Usage:
@@ -72,6 +75,44 @@ say() {
   fi
 }
 
+git_info_exclude_path() {
+  git -C "$1" rev-parse --path-format=absolute --git-path info/exclude
+}
+
+ensure_worktree_excludes() {
+  local repo_root="$1"
+  shift
+  local exclude_path
+  exclude_path="$(git_info_exclude_path "$repo_root")"
+  mkdir -p "$(dirname "$exclude_path")"
+
+  local tmp_path
+  tmp_path="$(mktemp)"
+  if [[ -f "$exclude_path" ]]; then
+    awk -v start="$WORKFLOW_EXCLUDE_MARKER_START" -v end="$WORKFLOW_EXCLUDE_MARKER_END" '
+      $0 == start { skip = 1; next }
+      $0 == end { skip = 0; next }
+      !skip { print }
+    ' "$exclude_path" > "$tmp_path"
+  else
+    : > "$tmp_path"
+  fi
+
+  {
+    if [[ -s "$tmp_path" ]]; then
+      cat "$tmp_path"
+      printf '\n'
+    fi
+    printf '%s\n' "$WORKFLOW_EXCLUDE_MARKER_START"
+    for pattern in "$@"; do
+      printf '%s\n' "$pattern"
+    done
+    printf '%s\n' "$WORKFLOW_EXCLUDE_MARKER_END"
+  } > "$exclude_path"
+
+  rm -f "$tmp_path"
+}
+
 backup_existing_target() {
   local repo_root="$1"
   local name="$2"
@@ -100,6 +141,11 @@ fi
 
 venv_name_spec="${SHARED_VENV_NAMES:-.venv314 .venv313 .venv312 .venv311 .venv310 .venv}"
 read -r -a VENV_NAMES <<< "$venv_name_spec"
+EXCLUDE_PATTERNS=()
+for name in "${VENV_NAMES[@]}"; do
+  EXCLUDE_PATTERNS+=("/$name")
+done
+ensure_worktree_excludes "$ROOT" "${EXCLUDE_PATTERNS[@]}"
 
 linked_any=0
 for name in "${VENV_NAMES[@]}"; do

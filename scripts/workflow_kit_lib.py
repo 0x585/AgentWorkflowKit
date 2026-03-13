@@ -32,10 +32,17 @@ MANAGED_RUNTIME_BASENAMES = (
     "exec_record_hygiene.py",
     "pending_worklist_autoclean.py",
 )
+SHARED_VENV_NAMES = (
+    ".venv314",
+    ".venv313",
+    ".venv312",
+    ".venv311",
+    ".venv310",
+    ".venv",
+)
 WORKFLOW_EXCLUDE_MARKER_START = "# workflow-kit managed excludes start"
 WORKFLOW_EXCLUDE_MARKER_END = "# workflow-kit managed excludes end"
-DOWNSTREAM_EXCLUDE_PATTERNS = (
-)
+DOWNSTREAM_EXCLUDE_PATTERNS = tuple(f"/{name}" for name in SHARED_VENV_NAMES)
 CURRENT_RELEASE_EXIT = 0
 OUTDATED_RELEASE_EXIT = 10
 DRIFT_RELEASE_EXIT = 20
@@ -900,7 +907,14 @@ def submit_release_to_repo_via_worktree_commit(
 
         repo_config = load_repo_config(workflow_root, resolved_repo_id)
         default_branch = str(repo_config["default_branch"])
-        worktree_env = {**os.environ, "WORKFLOW_GUARD_ACTIVE": "1"}
+        worktree_env = {
+            **os.environ,
+            "WORKFLOW_GUARD_ACTIVE": "1",
+            # Older downstream runtimes link .venv before session_sync and can dirty
+            # the freshly created worktree. Skip that bootstrap step until the
+            # current release is applied and can repair excludes first.
+            "SKIP_SHARED_VENV_LINK": "1",
+        }
         script_path = resolved_repo_root / ".git_scripts" / "new_worktree.sh"
         if not script_path.is_file():
             raise FileNotFoundError(f"downstream worktree script not found: {script_path}")
@@ -929,6 +943,13 @@ def submit_release_to_repo_via_worktree_commit(
             repo_id=resolved_repo_id,
             profile=resolved_profile,
         )
+        repair_shared_venv_script = worktree_root / ".git_scripts" / "ensure_shared_venv.sh"
+        if repair_shared_venv_script.is_file():
+            _run_command(
+                [str(repair_shared_venv_script), "--quiet"],
+                cwd=worktree_root,
+                env={**os.environ, "WORKFLOW_GUARD_ACTIVE": "1"},
+            )
         after_paths = set(_git_status_paths(worktree_root))
         managed_release_paths = sorted(after_paths - baseline_paths)
         if not managed_release_paths:

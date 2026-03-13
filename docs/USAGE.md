@@ -42,7 +42,7 @@
 
 - 下游仓库中的 `.git_scripts/` 和 `.githooks/` 由本项目自动生成
 - 下游仓库中的 `.git_scripts/` 和 `.githooks/` 由下游仓库正常纳入版本控制，便于审查和回滚
-- 下游仓库中的项目级 `.venv` 不纳入版本控制；新 worktree 通过受管脚本自动补指向主仓共享环境的软链接
+- 下游仓库中的项目级 `.venv` 不纳入版本控制；新 worktree 通过受管脚本自动补指向主仓共享环境的软链接，并在对应 worktree 的 `.git/info/exclude` 中登记这些链接，避免被 `session_sync` 误判为脏工作区
 - 下游仓库原本用于应用自身逻辑的 `scripts/` 会继续保留
 - 只有 git 工作流相关的受管脚本会迁移到 `.git_scripts/`
 - 中央仓库自身的 `PublicWorkRegister` 脚本依赖 `src/main/python/agent_workflow_kit/tooling/service/public_work_register_service.py`
@@ -118,6 +118,7 @@ python3 scripts/apply_release.py --repo-root /Users/pi/PyCharmProject/AgentTask 
 - 生成下游仓库的 `.git_scripts/`
 - 生成下游仓库的 `.githooks/`
 - 让 `new_worktree` / `post-checkout` / `new_exec` 自动修复 worktree 的共享 `.venv` 软链接
+- 同步维护 worktree 级 `.git/info/exclude`，让共享 `.venv` 软链接不会出现在 `git status` 中
 - 生成下游仓库的 `src/main/python/<python_package_name>/tooling/service/public_work_register_service.py`
 - 清理旧版受管 `scripts/*` git 工作流脚本
 - 清理旧的 workflow-kit managed `.git/info/exclude` block（如果存在）
@@ -135,6 +136,7 @@ python3 scripts/apply_downstreams.py
 - 如果当前 release 已经过期，会提示你先重新发布
 - 对于 `current` 状态的子仓库，会直接跳过，不会创建空提交
 - 对于 `outdated` / `drift` 状态的子仓库，会在子仓库主目录旁创建 `*-wt-*` worktree，应用当前 release，并生成本地 commit
+- 为兼容仍在旧 runtime 上的子仓库，中央 fan-out 创建 worktree 时会先临时跳过共享 `.venv` 链接，待新 release 应用完成后再补做修复
 - 这些下游提交默认只保留在本地，不会自动 push 或 auto-release；命令输出会返回 worktree 路径、分支名与 commit sha
 - 如果某个子仓库失败，其他子仓库仍会继续处理，但最终命令会返回非零退出码
 
