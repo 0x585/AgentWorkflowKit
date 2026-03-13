@@ -34,8 +34,6 @@ MANAGED_RUNTIME_BASENAMES = (
 WORKFLOW_EXCLUDE_MARKER_START = "# workflow-kit managed excludes start"
 WORKFLOW_EXCLUDE_MARKER_END = "# workflow-kit managed excludes end"
 DOWNSTREAM_EXCLUDE_PATTERNS = (
-    f"{MANAGED_GIT_SCRIPTS_DIR}/",
-    f"{MANAGED_HOOKS_DIR}/",
 )
 CURRENT_RELEASE_EXIT = 0
 OUTDATED_RELEASE_EXIT = 10
@@ -315,27 +313,29 @@ def git_info_exclude_path(repo_root: Path) -> Path:
 def ensure_local_exclude_patterns(repo_root: Path, patterns: tuple[str, ...] = DOWNSTREAM_EXCLUDE_PATTERNS) -> None:
     exclude_path = git_info_exclude_path(repo_root)
     existing = exclude_path.read_text(encoding="utf-8") if exclude_path.exists() else ""
-    managed_block = (
-        f"{WORKFLOW_EXCLUDE_MARKER_START}\n"
-        + "\n".join(patterns)
-        + f"\n{WORKFLOW_EXCLUDE_MARKER_END}\n"
-    )
+    prefix = existing
+    suffix = ""
     if WORKFLOW_EXCLUDE_MARKER_START in existing and WORKFLOW_EXCLUDE_MARKER_END in existing:
         prefix, remainder = existing.split(WORKFLOW_EXCLUDE_MARKER_START, 1)
         _, suffix = remainder.split(WORKFLOW_EXCLUDE_MARKER_END, 1)
-        updated = prefix.rstrip("\n")
+
+    updated = prefix.rstrip("\n")
+    if patterns:
+        managed_block = (
+            f"{WORKFLOW_EXCLUDE_MARKER_START}\n"
+            + "\n".join(patterns)
+            + f"\n{WORKFLOW_EXCLUDE_MARKER_END}\n"
+        )
         if updated:
             updated += "\n\n"
         updated += managed_block.rstrip("\n")
-        suffix = suffix.lstrip("\n")
-        if suffix:
-            updated += "\n\n" + suffix
-        updated += "\n"
-    else:
-        updated = existing.rstrip("\n")
+    suffix = suffix.lstrip("\n")
+    if suffix:
         if updated:
             updated += "\n\n"
-        updated += managed_block
+        updated += suffix.rstrip("\n")
+    if updated:
+        updated += "\n"
     exclude_path.parent.mkdir(parents=True, exist_ok=True)
     exclude_path.write_text(updated, encoding="utf-8")
 
@@ -473,6 +473,10 @@ def placeholderize_runtime_entry(
     compile_test_path = str(repo_config["compile_test_path"])
 
     replacements = [
+        (
+            f'PREFERRED_BRANCH="{default_branch}"',
+            'PREFERRED_BRANCH="{{ default_branch }}"',
+        ),
         (
             f'EXPECTED_ROOT="${{EXPECTED_WORKSPACE_ROOT:-{expected_root}}}"',
             'EXPECTED_ROOT="${EXPECTED_WORKSPACE_ROOT:-{{ expected_workspace_root }}}"',

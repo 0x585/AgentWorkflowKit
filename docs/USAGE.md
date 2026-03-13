@@ -41,7 +41,7 @@
 说明：
 
 - 下游仓库中的 `.git_scripts/` 和 `.githooks/` 由本项目自动生成
-- 下游仓库中的 `.git_scripts/` 和 `.githooks/` 是受管源码，可以随 release 一起进入子仓库提交
+- 下游仓库中的 `.git_scripts/` 和 `.githooks/` 由下游仓库正常纳入版本控制，便于审查和回滚
 - 下游仓库原本用于应用自身逻辑的 `scripts/` 会继续保留
 - 只有 git 工作流相关的受管脚本会迁移到 `.git_scripts/`
 - 中央仓库自身的 `PublicWorkRegister` 脚本依赖 `src/main/python/agent_workflow_kit/tooling/service/public_work_register_service.py`
@@ -118,7 +118,7 @@ python3 scripts/apply_release.py --repo-root /Users/pi/PyCharmProject/AgentTask 
 - 生成下游仓库的 `.githooks/`
 - 生成下游仓库的 `src/main/python/<python_package_name>/tooling/service/public_work_register_service.py`
 - 清理旧版受管 `scripts/*` git 工作流脚本
-- 写入 `.git/info/exclude`
+- 清理旧的 workflow-kit managed `.git/info/exclude` block（如果存在）
 - 设置 `core.hooksPath=.githooks`
 
 ### 4.5 应用到所有下游仓库
@@ -212,6 +212,7 @@ SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT=1 git commit ...
   下游仓库本地绝对路径
 - `default_branch`
   下游默认分支
+  受管脚本会优先采用这里声明的默认分支；只要对应分支已经存在，即使仓库本地 `origin/HEAD` 还没刷新，也不会回退到旧默认分支
 - `python_package_name`
   Python 包名，用于受管 Python 脚本中的导入
 - `compile_main_path`
@@ -269,7 +270,6 @@ python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/MyNewApp -
 
 同时：
 
-- `.git/info/exclude` 会自动忽略 `.git_scripts/` 和 `.githooks/`
 - `core.hooksPath` 会自动指向 `.githooks`
 - 应用自身原有的 `scripts/` 目录不会被整体删除
 - 只有旧版受管 git 工作流脚本会从 `scripts/` 中移除
@@ -287,9 +287,9 @@ python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/MyNewApp -
 
 ## 8. 常见问题
 
-### 8.1 为什么下游的 `.git_scripts/` 和 `.githooks/` 不进版本控制？
+### 8.1 为什么下游的 `.git_scripts/` 和 `.githooks/` 现在要进版本控制？
 
-因为它们是中央仓库生成的受管产物，不是下游仓库手工维护的源码。
+因为它们虽然由中央仓库生成，但仍然是下游仓库的实际运行入口。纳入版本控制后，评审、回滚、bisect 和工作区复制都会更直接，也能避免 worktree 因本地 exclude 而缺失运行文件。
 
 ### 8.2 为什么保留了下游的 `scripts/`？
 
