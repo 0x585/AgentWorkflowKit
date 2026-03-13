@@ -3,10 +3,10 @@
 - Profile: `{{ profile }}`
 - Workflow version: `{{ workflow_version }}`
 - Workflow source metadata: `.workflow-kit/source.json`
-- Canonical managed runtime entrypoints live under `.workflow-kit/`; `.git_scripts/` is compatibility-only when present.
-- If this repository keeps stable `scripts/*` wrappers, prefer them as operator-facing commands; they delegate to `.workflow-kit/`.
-- Before substantive work, run the repository workflow guard entrypoint: `./scripts/assert_workspace.sh` when present, otherwise `./.workflow-kit/assert_workspace.sh`.
+- Canonical managed runtime entrypoints live under `.workflow-kit/`.
+- Before substantive work, run the repository workflow guard entrypoint: `./.workflow-kit/assert_workspace.sh`.
 - Managed git hooks live under `.githooks/`; keep `core.hooksPath=.githooks`.
+- Legacy managed `.git_scripts/*` and workflow `scripts/*` wrappers are removed during release apply; project-owned callers should invoke `.workflow-kit/*` directly.
 - Code edits belong on `codex/*` managed worktrees rather than the default-branch primary checkout.
 - Commit messages use `[<exec_id>] <type>(<scope>): <summary>`; if this repository enables auto-push/auto-release hooks, `git commit` may trigger them.
 - Do not manually edit managed workflow files in this repository.

@@ -56,7 +56,6 @@ class WorkflowReleaseTest(unittest.TestCase):
 
     def copy_runtime_sources(self, target_root: Path) -> None:
         shutil.copytree(self.workflow_root / ".workflow-kit", target_root / ".workflow-kit")
-        shutil.copytree(self.workflow_root / ".git_scripts", target_root / ".git_scripts")
         shutil.copytree(self.workflow_root / ".githooks", target_root / ".githooks")
 
     def copy_workflow_repo(self, workflow_root: Path) -> None:
@@ -263,7 +262,7 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.assertIn("new content", updated)
         self.assertNotIn("\nold\n", updated)
 
-    def test_apply_release_to_repo_ignores_managed_git_runtime_and_removes_legacy_scripts(self) -> None:
+    def test_apply_release_to_repo_removes_legacy_managed_entrypoints(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             temp_root = Path(tmp_dir)
             workflow_root = temp_root / "workflow"
@@ -275,10 +274,25 @@ class WorkflowReleaseTest(unittest.TestCase):
             repo_root.mkdir(parents=True)
             subprocess.run(["git", "init", str(repo_root)], check=True, capture_output=True, text=True)
             self.write_repo_docs(repo_root)
+            legacy_git_scripts_dir = repo_root / ".git_scripts"
+            legacy_git_scripts_dir.mkdir(parents=True, exist_ok=True)
+            legacy_runtime_file = legacy_git_scripts_dir / "new_branch.sh"
+            legacy_runtime_file.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
             legacy_scripts_dir = repo_root / "scripts"
             legacy_scripts_dir.mkdir(parents=True, exist_ok=True)
-            legacy_file = legacy_scripts_dir / "new_branch.sh"
-            legacy_file.write_text("# legacy\n", encoding="utf-8")
+            legacy_wrapper_file = legacy_scripts_dir / "new_branch.sh"
+            legacy_wrapper_file.write_text(
+                """#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec "$ROOT/.workflow-kit/new_branch.sh" "$@"
+""",
+                encoding="utf-8",
+            )
+            project_script = legacy_scripts_dir / "project_helper.sh"
+            project_script.write_text("#!/usr/bin/env bash\necho project\n", encoding="utf-8")
 
             repo_config = {
                 "repo_id": "TempRepo",
@@ -312,10 +326,11 @@ class WorkflowReleaseTest(unittest.TestCase):
             )
 
             self.assertEqual("TempRepo", summary["repo_id"])
-            self.assertEqual([], summary["removed_legacy_paths"])
-            self.assertIn(str(legacy_file.resolve()), summary["refreshed_wrapper_paths"])
-            self.assertTrue(legacy_file.exists())
-            self.assertIn('exec "$ROOT/.workflow-kit/new_branch.sh" "$@"', legacy_file.read_text(encoding="utf-8"))
+            self.assertIn(str(legacy_runtime_file.resolve()), summary["removed_legacy_paths"])
+            self.assertIn(str(legacy_wrapper_file.resolve()), summary["removed_legacy_paths"])
+            self.assertFalse(legacy_runtime_file.exists())
+            self.assertFalse(legacy_wrapper_file.exists())
+            self.assertTrue(project_script.exists())
             self.assertTrue((repo_root / ".workflow-kit" / "new_branch.sh").is_file())
             self.assertTrue((repo_root / ".workflow-kit" / "ensure_shared_venv.sh").is_file())
             self.assertTrue(

@@ -3,9 +3,9 @@
 - Profile: `{{ profile }}`
 - Workflow version: `{{ workflow_version }}`
 - Workflow source metadata: `.workflow-kit/source.json`
-- Canonical managed runtime entrypoints live under `.workflow-kit/`; `.git_scripts/` remains compatibility-only when present.
-- If this repository keeps stable `scripts/*` wrappers, they remain the operator-facing shortcuts and delegate to `.workflow-kit/`.
+- Managed workflow entrypoints live under `.workflow-kit/`.
 - Managed hooks live under `.githooks/`.
+- Legacy managed `.git_scripts/*` and workflow `scripts/*` wrappers are removed during release apply; project-owned scripts should call `.workflow-kit/*` directly.
 - This repository must not locally customize managed git workflow files.
 - Keep centrally managed workflow guidance in this fixed block; keep project-specific architecture and domain docs in the rest of the README.
 - Managed entrypoints run locally first; only after a failure do they check the published central release, auto-upgrade if outdated, and retry once.

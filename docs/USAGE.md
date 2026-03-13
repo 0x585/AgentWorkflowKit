@@ -43,8 +43,8 @@
 - 下游仓库中的 `.workflow-kit/` 和 `.githooks/` 由本项目自动生成
 - 下游仓库中的 `.workflow-kit/` 和 `.githooks/` 由下游仓库正常纳入版本控制，便于审查和回滚
 - 下游仓库中的项目级 `.venv` 不纳入版本控制；新 worktree 通过受管脚本自动补指向主仓共享环境的软链接，并在对应 worktree 的 `.git/info/exclude` 中登记这些链接，避免被 `session_sync` 误判为脏工作区
-- 下游仓库原本用于应用自身逻辑的 `scripts/` 会继续保留
-- 只有 git 工作流相关的受管脚本会迁移到 `.workflow-kit/`
+- 下游仓库原本用于应用自身逻辑的 `scripts/` 会继续保留，但它们不再承载受管 workflow wrapper
+- git 工作流相关的受管入口统一固定在 `.workflow-kit/`
 - 中央仓库自身的 `PublicWorkRegister` 脚本依赖 `src/main/python/agent_workflow_kit/tooling/service/public_work_register_service.py`
 - 下游仓库中的 `src/main/python/<python_package_name>/tooling/service/public_work_register_service.py` 也由中央仓库统一下发，不应在子项目里各自分叉维护
 
@@ -120,7 +120,8 @@ python3 scripts/apply_release.py --repo-root /Users/pi/PyCharmProject/AgentTask 
 - 让 `new_worktree` / `post-checkout` / `new_exec` 自动修复 worktree 的共享 `.venv` 软链接
 - 同步维护 worktree 级 `.git/info/exclude`，让共享 `.venv` 软链接不会出现在 `git status` 中
 - 生成下游仓库的 `src/main/python/<python_package_name>/tooling/service/public_work_register_service.py`
-- 如果下游仓库已有旧版受管 `scripts/*` workflow wrapper，会把这些 wrapper 刷新为转发到 `.workflow-kit/`
+- 删除旧版受管 `.git_scripts/*`
+- 删除旧版受管 `scripts/*` workflow wrapper；项目脚本若仍需调用 workflow，必须直接调用 `./.workflow-kit/*`
 - 刷洗 `AGENTS.md` / `README.md` 中散落的通用 workflow 文案，把中央受管 workflow 说明收束到固定 managed block
 - 清理旧的 workflow-kit managed `.git/info/exclude` block（如果存在）
 - 设置 `core.hooksPath=.githooks`
@@ -137,7 +138,7 @@ python3 scripts/apply_downstreams.py
 - 如果当前 release 已经过期，会提示你先重新发布
 - 对于 `current` 状态的子仓库，会直接跳过，不会创建空提交
 - 对于 `outdated` / `drift` 状态的子仓库，会在子仓库主目录旁创建 `*-wt-*` worktree，应用当前 release，并生成本地 commit
-- 如果子仓库还没有 `.workflow-kit/new_worktree.sh`，中央 fan-out 会临时回退到 `.git_scripts/new_worktree.sh` 完成首次迁移
+- 如果子仓库缺失 `.workflow-kit/new_worktree.sh`，该子仓会直接失败并返回错误
 - 为兼容仍在旧 runtime 上的子仓库，中央 fan-out 创建 worktree 时会先临时跳过共享 `.venv` 链接，待新 release 应用完成后再补做修复
 - 这些下游提交默认只保留在本地，不会自动 push 或 auto-release；命令输出会返回 worktree 路径、分支名与 commit sha
 - 如果某个子仓库失败，其他子仓库仍会继续处理，但最终命令会返回非零退出码

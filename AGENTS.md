@@ -45,6 +45,7 @@ This repository is the central source of truth for downstream managed workflow f
 - Templates under `templates/full_codex_flow/files/.workflow-kit/` and `templates/full_codex_flow/files/.githooks/` are generated artifacts, not the primary editing target.
 - Downstream `PublicWorkRegisterService` runtime files are also managed here via the profile template at `templates/full_codex_flow/files/src/main/python/public_work_register_service.py.tmpl`.
 - If you change `.workflow-kit/`, `.githooks/`, `profiles/`, `repos/`, or release tooling in `scripts/`, publish a new release before expecting downstream auto-apply to succeed.
+- Downstream apply removes legacy managed `.git_scripts/*` and managed workflow `scripts/*` wrappers; project-owned callers must target `.workflow-kit/*`.
 - 下游仓库中的受管 `.workflow-kit/` / `.githooks/` 默认应保持纳入版本控制，中央 apply 不再把它们写入 `.git/info/exclude`。
 - 下游仓库的项目级 `.venv` 仍应保持本地运行时，不纳入版本控制；受管脚本负责在 worktree 中自动补共享 `.venv` 软链接，并同步维护 worktree 级 `.git/info/exclude`，避免新 worktree 在自动 sync 前被误判为 dirty。
 - 默认分支探测以仓库 manifest 中声明的 `default_branch` 为准；只要该分支已存在，本地脚本不应因为陈旧的 `origin/HEAD` 继续回退到旧默认分支。
@@ -61,7 +62,6 @@ python3 scripts/publish_release.py --profile full_codex_flow --version <new-vers
 - `.githooks/post-commit` runs `python3 scripts/apply_downstreams.py`.
 - `scripts/apply_downstreams.py` refuses to run when current release artifacts are stale relative to the source repo.
 - `scripts/apply_downstreams.py` now creates downstream local commits in child-repo worktrees; it does not push or auto-release those downstream commits.
-- 为兼容尚未迁移到 `.workflow-kit/` 入口的旧版子仓，中央 downstream apply 在创建首次迁移 worktree 时会优先尝试 `.workflow-kit/new_worktree.sh`，缺失时回退到 `.git_scripts/new_worktree.sh`。
 - 为兼容旧版下游 runtime，中央 downstream apply 在调用子仓 `new_worktree.sh` 时会临时设置 `SKIP_SHARED_VENV_LINK=1`；待当前 release 应用完成后，再由新 runtime 补做共享 `.venv` 修复。
 - 下游 `AGENTS.md` 中散落的通用 workflow 章节会在 apply 时刷洗并收束到固定 managed block；块外应只保留仓库特有规则。
 - Therefore, “changed workflow source but did not publish release yet” is an invalid handoff state for downstream sync.
@@ -124,11 +124,17 @@ Additional rules (enforced by the guard script):
 - Any workflow-source change that is handed to downstream apply without publishing a matching release first.
 
 <!-- workflow-kit:agents:start -->
-## Managed Workflow Release
+## Managed Workflow Contract
 
 - Profile: `full_codex_flow`
-- Workflow version: `1.0.5`
+- Workflow version: `1.0.15`
 - Workflow source metadata: `.workflow-kit/source.json`
+- Canonical managed runtime entrypoints live under `.workflow-kit/`.
+- Before substantive work, run the repository workflow guard entrypoint: `./.workflow-kit/assert_workspace.sh`.
+- Managed git hooks live under `.githooks/`; keep `core.hooksPath=.githooks`.
+- Legacy managed `.git_scripts/*` and workflow `scripts/*` wrappers are removed during release apply; project-owned callers should invoke `.workflow-kit/*` directly.
+- Code edits belong on `codex/*` managed worktrees rather than the default-branch primary checkout.
+- Commit messages use `[<exec_id>] <type>(<scope>): <summary>`; if this repository enables auto-push/auto-release hooks, `git commit` may trigger them.
 - Do not manually edit managed workflow files in this repository.
 - Repo-specific differences must be implemented through the central manifest, not by local customization.
 - Managed entrypoints run locally first; only after a failure do they check the published central release, auto-apply if outdated, and retry once.
