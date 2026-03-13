@@ -16,7 +16,7 @@ Primary repository root:
 Before any substantive work, run:
 
 ```bash
-./.git_scripts/assert_workspace.sh
+./.workflow-kit/assert_workspace.sh
 ```
 
 If it fails, stop immediately and fix the workspace first.
@@ -25,27 +25,27 @@ If it fails, stop immediately and fix the workspace first.
 
 When switching into a `codex/*` branch, hook `.githooks/post-checkout` automatically tries to sync the branch to latest `origin/<default-branch>`:
 
-- It runs `./.git_scripts/session_sync.sh <default-branch>`.
+- It runs `./.workflow-kit/session_sync.sh <default-branch>`.
 - If workspace is dirty or sync fails, it only warns and does not block checkout.
-- You can check current sync relationship via `./.git_scripts/session_sync_status.sh`.
-- `./.git_scripts/new_exec.sh` still runs sync by default before allocating execution ID (use `--no-sync` only for internal/special flows).
+- You can check current sync relationship via `./.workflow-kit/session_sync_status.sh`.
+- `./.workflow-kit/new_exec.sh` still runs sync by default before allocating execution ID (use `--no-sync` only for internal/special flows).
 
 ## Git Hooks Enable (Mandatory)
 
 - Hooks must be enabled in this repository: `git config core.hooksPath .githooks`.
-- Prefer one-shot setup: `./.git_scripts/setup_githooks.sh`.
-- In `ASSERT_PURPOSE=code` mode, hooks misconfiguration is a hard failure in `.git_scripts/assert_workspace.sh`.
+- Prefer one-shot setup: `./.workflow-kit/setup_githooks.sh`.
+- In `ASSERT_PURPOSE=code` mode, hooks misconfiguration is a hard failure in `.workflow-kit/assert_workspace.sh`.
 - In default mode, hooks misconfiguration only warns to avoid blocking read-only operations.
 
 ## Central Release Discipline (Mandatory)
 
 This repository is the central source of truth for downstream managed workflow files:
 
-- Git workflow runtime sources live in `.git_scripts/` and `.githooks/`.
-- Templates under `templates/full_codex_flow/files/.git_scripts/` and `templates/full_codex_flow/files/.githooks/` are generated artifacts, not the primary editing target.
+- Git workflow runtime sources live in `.workflow-kit/` and `.githooks/`.
+- Templates under `templates/full_codex_flow/files/.workflow-kit/` and `templates/full_codex_flow/files/.githooks/` are generated artifacts, not the primary editing target.
 - Downstream `PublicWorkRegisterService` runtime files are also managed here via the profile template at `templates/full_codex_flow/files/src/main/python/public_work_register_service.py.tmpl`.
-- If you change `.git_scripts/`, `.githooks/`, `profiles/`, `repos/`, or release tooling in `scripts/`, publish a new release before expecting downstream auto-apply to succeed.
-- 下游仓库中的受管 `.git_scripts/` / `.githooks/` 默认应保持纳入版本控制，中央 apply 不再把它们写入 `.git/info/exclude`。
+- If you change `.workflow-kit/`, `.githooks/`, `profiles/`, `repos/`, or release tooling in `scripts/`, publish a new release before expecting downstream auto-apply to succeed.
+- 下游仓库中的受管 `.workflow-kit/` / `.githooks/` 默认应保持纳入版本控制，中央 apply 不再把它们写入 `.git/info/exclude`。
 - 下游仓库的项目级 `.venv` 仍应保持本地运行时，不纳入版本控制；受管脚本负责在 worktree 中自动补共享 `.venv` 软链接，并同步维护 worktree 级 `.git/info/exclude`，避免新 worktree 在自动 sync 前被误判为 dirty。
 - 默认分支探测以仓库 manifest 中声明的 `default_branch` 为准；只要该分支已存在，本地脚本不应因为陈旧的 `origin/HEAD` 继续回退到旧默认分支。
 
@@ -61,7 +61,9 @@ python3 scripts/publish_release.py --profile full_codex_flow --version <new-vers
 - `.githooks/post-commit` runs `python3 scripts/apply_downstreams.py`.
 - `scripts/apply_downstreams.py` refuses to run when current release artifacts are stale relative to the source repo.
 - `scripts/apply_downstreams.py` now creates downstream local commits in child-repo worktrees; it does not push or auto-release those downstream commits.
+- 为兼容尚未迁移到 `.workflow-kit/` 入口的旧版子仓，中央 downstream apply 在创建首次迁移 worktree 时会优先尝试 `.workflow-kit/new_worktree.sh`，缺失时回退到 `.git_scripts/new_worktree.sh`。
 - 为兼容旧版下游 runtime，中央 downstream apply 在调用子仓 `new_worktree.sh` 时会临时设置 `SKIP_SHARED_VENV_LINK=1`；待当前 release 应用完成后，再由新 runtime 补做共享 `.venv` 修复。
+- 下游 `AGENTS.md` 中散落的通用 workflow 章节会在 apply 时刷洗并收束到固定 managed block；块外应只保留仓库特有规则。
 - Therefore, “changed workflow source but did not publish release yet” is an invalid handoff state for downstream sync.
 - Use `docs/USAGE.md` for the full release/apply/onboarding procedure.
 
@@ -76,13 +78,13 @@ git commit -m "[<exec_id>] <type>(<scope>): <summary>"
 - `.githooks/post-commit` first attempts downstream apply via `python3 scripts/apply_downstreams.py`.
 - `.githooks/post-commit` then auto-runs `git push` for `codex/*` branches by default.
 - Downstream apply creates local child-repo commits only; any resulting downstream worktree still requires later push/release handling in that child repo.
-- `.githooks/pre-push` auto-triggers `./.git_scripts/session_push_autorelease.sh` for `codex/*` pushes.
+- `.githooks/pre-push` auto-triggers `./.workflow-kit/session_push_autorelease.sh` for `codex/*` pushes.
 - Flow: push `codex/*` -> merge into `<default-branch>` -> push `<default-branch>` -> delete remote/local source branch -> remove source worktree.
-- If auto-release reports `behind/diverged`, run `./.git_scripts/session_sync.sh <default-branch>` first, then retry push/release.
+- If auto-release reports `behind/diverged`, run `./.workflow-kit/session_sync.sh <default-branch>` first, then retry push/release.
 - If you need to commit without downstream auto-apply (special cases only), use `SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT=1 git commit ...`.
 - If you need to commit without auto push (special cases only), use `SKIP_AUTO_PUSH_AFTER_COMMIT=1 git commit ...`.
 - No second confirmation is required.
-- If merge conflicts occur, conflict context is kept and resumed via `./.git_scripts/session_release_resume.sh`.
+- If merge conflicts occur, conflict context is kept and resumed via `./.workflow-kit/session_release_resume.sh`.
 - Auto-release success means this task worktree is removed; for next task create/switch to a new `codex/*` worktree first.
 
 ## Code Edit Guard (Mandatory)
@@ -90,7 +92,7 @@ git commit -m "[<exec_id>] <type>(<scope>): <summary>"
 For manual guard checks before code/file edits, run:
 
 ```bash
-ASSERT_PURPOSE=code ./.git_scripts/assert_workspace.sh
+ASSERT_PURPOSE=code ./.workflow-kit/assert_workspace.sh
 ```
 
 Code/file edits are allowed in attached worktrees:
@@ -118,7 +120,7 @@ Additional rules (enforced by the guard script):
 
 - Detached `HEAD` in `ASSERT_PURPOSE=code` mode.
 - Any worktree not attached to `/Users/pi/PyCharmProject/AgentWorkflowKit`.
-- Any worktree marked abnormal by `.git_scripts/assert_workspace.sh` until it is resolved/cleaned.
+- Any worktree marked abnormal by `.workflow-kit/assert_workspace.sh` until it is resolved/cleaned.
 - Any workflow-source change that is handed to downstream apply without publishing a matching release first.
 
 <!-- workflow-kit:agents:start -->

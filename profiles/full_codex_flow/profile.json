@@ -43,6 +43,107 @@
     },
     {
       "type": "file",
+      "output": ".workflow-kit/workflow_guard.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/workflow_guard.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/assert_workspace.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/assert_workspace.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/setup_githooks.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/setup_githooks.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/git_default_branch.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/git_default_branch.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/new_branch.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/new_branch.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/new_worktree.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/new_worktree.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/ensure_shared_venv.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/ensure_shared_venv.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/new_exec.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/new_exec.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/session_sync.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/session_sync.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/session_sync_status.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/session_sync_status.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/session_push_autorelease.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/session_push_autorelease.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/session_release_resume.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/session_release_resume.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/public_work_register_sync.py",
+      "template": "templates/full_codex_flow/files/.workflow-kit/public_work_register_sync.py.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/public_work_register_claim.py",
+      "template": "templates/full_codex_flow/files/.workflow-kit/public_work_register_claim.py.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": "src/main/python/{{ python_package_name }}/tooling/service/public_work_register_service.py",
+      "template": "templates/full_codex_flow/files/src/main/python/public_work_register_service.py.tmpl"
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/exec_record_hygiene.py",
+      "template": "templates/full_codex_flow/files/.workflow-kit/exec_record_hygiene.py.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/pending_worklist_autoclean.py",
+      "template": "templates/full_codex_flow/files/.workflow-kit/pending_worklist_autoclean.py.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
       "output": ".git_scripts/workflow_guard.sh",
       "template": "templates/full_codex_flow/files/.git_scripts/workflow_guard.sh.tmpl",
       "executable": true
@@ -124,11 +225,6 @@
       "output": ".git_scripts/public_work_register_claim.py",
       "template": "templates/full_codex_flow/files/.git_scripts/public_work_register_claim.py.tmpl",
       "executable": true
-    },
-    {
-      "type": "file",
-      "output": "src/main/python/{{ python_package_name }}/tooling/service/public_work_register_service.py",
-      "template": "templates/full_codex_flow/files/src/main/python/public_work_register_service.py.tmpl"
     },
     {
       "type": "file",

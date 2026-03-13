@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# Managed by AgentWorkflowKit
+# Workflow-Version: 1.0.5
+# Do not edit in this repository.
+# Source profile/file id: .workflow-kit/session_sync_status.sh
+
+__workflow_guard_root="$(git rev-parse --show-toplevel 2>/dev/null || { cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd; })"
+if [[ "${WORKFLOW_GUARD_ACTIVE:-0}" != "1" ]]; then
+  exec "$__workflow_guard_root/.workflow-kit/workflow_guard.sh" "$0" "$@"
+fi
+unset __workflow_guard_root
+
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  ./.workflow-kit/session_sync_status.sh [--porcelain] [target_branch]
+
+Examples:
+  ./.workflow-kit/session_sync_status.sh
+  ./.workflow-kit/session_sync_status.sh --porcelain
+  ./.workflow-kit/session_sync_status.sh --porcelain <default-branch>
+USAGE
+}
+
+PORCELAIN=0
+ROOT="$(git rev-parse --show-toplevel)"
+TARGET_BRANCH="$("$ROOT/.workflow-kit/git_default_branch.sh" "$ROOT")"
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --porcelain)
+      PORCELAIN=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      TARGET_BRANCH="$1"
+      shift
+      ;;
+  esac
+done
+cd "$ROOT"
+
+CURRENT_BRANCH="$(git branch --show-current || true)"
+TARGET_REF="origin/${TARGET_BRANCH}"
+
+if [[ -z "$CURRENT_BRANCH" ]]; then
+  STATUS="detached"
+  AHEAD="0"
+  BEHIND="0"
+  HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+  TARGET_SHA="$(git rev-parse --verify "$TARGET_REF" 2>/dev/null || true)"
+elif ! git rev-parse --verify "$TARGET_REF" >/dev/null 2>&1; then
+  STATUS="missing-target"
+  AHEAD="0"
+  BEHIND="0"
+  HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+  TARGET_SHA=""
+else
+  COUNTS="$(git rev-list --left-right --count "HEAD...${TARGET_REF}")"
+  AHEAD="$(awk '{print $1}' <<<"$COUNTS")"
+  BEHIND="$(awk '{print $2}' <<<"$COUNTS")"
+  HEAD_SHA="$(git rev-parse HEAD)"
+  TARGET_SHA="$(git rev-parse "$TARGET_REF")"
+
+  if [[ "$AHEAD" == "0" && "$BEHIND" == "0" ]]; then
+    STATUS="aligned"
+  elif [[ "$AHEAD" != "0" && "$BEHIND" == "0" ]]; then
+    STATUS="ahead"
+  elif [[ "$AHEAD" == "0" && "$BEHIND" != "0" ]]; then
+    STATUS="behind"
+  else
+    STATUS="diverged"
+  fi
+fi
+
+if [[ "$PORCELAIN" -eq 1 ]]; then
+  echo "status=${STATUS}"
+  echo "branch=${CURRENT_BRANCH:-DETACHED}"
+  echo "target_ref=${TARGET_REF}"
+  echo "ahead=${AHEAD}"
+  echo "behind=${BEHIND}"
+  echo "head_sha=${HEAD_SHA}"
+  echo "target_sha=${TARGET_SHA}"
+  exit 0
+fi
+
+echo "[session-sync-status] branch=${CURRENT_BRANCH:-DETACHED}"
+echo "[session-sync-status] target=${TARGET_REF}"
+echo "[session-sync-status] status=${STATUS} ahead=${AHEAD} behind=${BEHIND}"

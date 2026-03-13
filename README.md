@@ -12,8 +12,8 @@ Central source of truth for managed git workflow assets.
 
 ## Source Of Truth
 
-- The runnable git workflow sources live in `.git_scripts/` and `.githooks/`
-- `templates/full_codex_flow/files/.git_scripts/` and `templates/full_codex_flow/files/.githooks/` are exported from those runtime files
+- The runnable git workflow sources live in `.workflow-kit/` and `.githooks/`
+- `templates/full_codex_flow/files/.workflow-kit/` and `templates/full_codex_flow/files/.githooks/` are exported from those runtime files
 - `python3 scripts/publish_release.py ...` automatically refreshes the templates before building a release
 
 ## Usage

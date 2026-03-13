@@ -1,0 +1,15 @@
+[1013] chore(workflow): migrate runtime entrypoint to .workflow-kit
+
+# Changes
+# - move managed workflow runtime entrypoints from .git_scripts/* to .workflow-kit/*
+# - keep .git_scripts/* as compatibility shims and refresh downstream scripts/* wrappers
+# - consolidate generic workflow docs into fixed AGENTS.md / README.md managed blocks
+
+# Tests
+# - python3 -m compileall .workflow-kit .git_scripts .githooks scripts tests
+# - python3 -m unittest tests.test_workflow_release
+# - python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.14
+# - python3 scripts/apply_downstreams.py
+
+# Risks
+# - downstream 1.0.14 commits remain local in child-repo worktrees and still need manual push/release

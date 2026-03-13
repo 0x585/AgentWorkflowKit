@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+# Managed by AgentWorkflowKit
+# Workflow-Version: 1.0.5
+# Do not edit in this repository.
+# Source profile/file id: .workflow-kit/exec_record_hygiene.py
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if os.environ.get("WORKFLOW_GUARD_ACTIVE") != "1":
+    os.execvpe(
+        str(REPO_ROOT / ".workflow-kit" / "workflow_guard.sh"),
+        [str(REPO_ROOT / ".workflow-kit" / "workflow_guard.sh"), str(Path(__file__).resolve()), *sys.argv[1:]],
+        os.environ,
+    )
+
+
+class ExecRecordHygieneService:
+    def audit_placeholders(self, repo_root: Path, target_branch: str) -> dict[str, object]:
+        records_dir = repo_root / "docs" / "exec_records"
+        index_path = records_dir / "INDEX.md"
+        placeholder_ids: list[int] = []
+        for record_path in sorted(records_dir.glob("[0-9][0-9][0-9][0-9]*.md")):
+            match = re.fullmatch(r"([0-9]{4,})\.md", record_path.name)
+            if match is None:
+                continue
+            exec_id = int(match.group(1))
+            if self._is_placeholder_exec(repo_root=repo_root, target_branch=target_branch, exec_id=exec_id):
+                placeholder_ids.append(exec_id)
+        reusable_exec_id = max(placeholder_ids) if placeholder_ids else None
+        cleanup_exec_ids = [exec_id for exec_id in placeholder_ids if exec_id != reusable_exec_id]
+        return {
+            "records_dir": str(records_dir),
+            "index_path": str(index_path),
+            "placeholder_exec_ids": placeholder_ids,
+            "reusable_exec_id": reusable_exec_id,
+            "cleanup_exec_ids": cleanup_exec_ids,
+        }
+
+    def cleanup_placeholders(self, repo_root: Path, target_branch: str, keep_exec_id: int | None = None) -> dict[str, object]:
+        audit = self.audit_placeholders(repo_root, target_branch)
+        placeholder_ids = [int(exec_id) for exec_id in audit.get("placeholder_exec_ids", [])]
+        cleanup_ids = placeholder_ids if keep_exec_id is None else [exec_id for exec_id in placeholder_ids if exec_id != int(keep_exec_id)]
+        removed_paths: list[str] = []
+        records_dir = repo_root / "docs" / "exec_records"
+        for exec_id in cleanup_ids:
+            for path in (records_dir / f"{exec_id}.md", records_dir / f"{exec_id}_commit.txt"):
+                if path.exists():
+                    path.unlink()
+                    removed_paths.append(str(path))
+        self._remove_index_rows(repo_root=repo_root, exec_ids=cleanup_ids)
+        return {
+            "cleanup_exec_ids": cleanup_ids,
+            "removed_paths": removed_paths,
+            "kept_exec_id": keep_exec_id,
+        }
+
+    def _is_placeholder_exec(self, repo_root: Path, target_branch: str, exec_id: int) -> bool:
+        if exec_id in self._committed_exec_ids(repo_root):
+            return False
+        records_dir = repo_root / "docs" / "exec_records"
+        record_path = records_dir / f"{exec_id}.md"
+        commit_template_path = records_dir / f"{exec_id}_commit.txt"
+        if not record_path.is_file() or not commit_template_path.is_file():
+            return False
+        if record_path.read_text(encoding="utf-8") != self._record_template(exec_id, target_branch):
+            return False
+        if commit_template_path.read_text(encoding="utf-8") != self._commit_template(exec_id):
+            return False
+        return self._index_has_todo_row(repo_root=repo_root, exec_id=exec_id)
+
+    def _committed_exec_ids(self, repo_root: Path) -> set[int]:
+        try:
+            output = subprocess.check_output(
+                ["git", "-C", str(repo_root), "log", "--all", "--format=%s"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            return set()
+        committed: set[int] = set()
+        for line in output.splitlines():
+            match = re.match(r"^\[([0-9]{4,})\]\s", line.strip())
+            if match is not None:
+                committed.add(int(match.group(1)))
+        return committed
+
+    def _index_has_todo_row(self, repo_root: Path, exec_id: int) -> bool:
+        index_path = repo_root / "docs" / "exec_records" / "INDEX.md"
+        if not index_path.is_file():
+            return False
+        pattern = re.compile(rf"^\|\s*{exec_id}\s*\|\s*[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}\s*\|\s*TODO\s*\|")
+        return any(pattern.fullmatch(line.strip()) for line in index_path.read_text(encoding="utf-8").splitlines())
+
+    def _remove_index_rows(self, repo_root: Path, exec_ids: list[int]) -> None:
+        if not exec_ids:
+            return
+        index_path = repo_root / "docs" / "exec_records" / "INDEX.md"
+        if not index_path.is_file():
+            return
+        ids = {int(exec_id) for exec_id in exec_ids}
+        kept_lines: list[str] = []
+        pattern = re.compile(r"^\|\s*([0-9]{4,})\s*\|")
+        for line in index_path.read_text(encoding="utf-8").splitlines():
+            match = pattern.match(line.strip())
+            if match is not None and int(match.group(1)) in ids:
+                continue
+            kept_lines.append(line)
+        index_path.write_text("\n".join(kept_lines) + "\n", encoding="utf-8")
+
+    def _record_template(self, exec_id: int, target_branch: str) -> str:
+        return (
+            f"# {exec_id}\n\n"
+            "## 完成定义（DoD）\n\n"
+            f"- [ ] 需求目标已明确（含“是否必须 merge 到 {target_branch} 并删除分支”）\n"
+            "- [ ] 变更验证命令已执行并记录\n"
+            "- [ ] 若为代码任务：已合并到目标分支并完成分支清理\n\n"
+            "## 需求摘要\n\n"
+            "TODO\n\n"
+            "## 变更文件\n\n"
+            "- TODO\n\n"
+            "## 变更说明\n\n"
+            "- TODO\n\n"
+            "## 验证结果\n\n"
+            "- TODO\n\n"
+            "## 完成待办项\n\n"
+            "- 无\n\n"
+            "## 当前占用待办项\n\n"
+            "- 无\n\n"
+            "## 风险与回滚\n\n"
+            "- TODO\n"
+        )
+
+    def _commit_template(self, exec_id: int) -> str:
+        return f"[{exec_id}] type(scope): summary\n\n# Changes\n# - TODO\n\n# Tests\n# - TODO\n\n# Risks\n# - TODO\n"
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Audit and cleanup placeholder exec record residue.")
+    parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
+    parser.add_argument("--target-branch", required=True)
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--reuse-latest", action="store_true")
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    service = ExecRecordHygieneService()
+    audit = service.audit_placeholders(args.repo_root, args.target_branch)
+    reusable_exec_id = audit.get("reusable_exec_id") if args.reuse_latest else None
+    result: dict[str, object] = {"audit": audit, "cleanup": None, "reusable_exec_id": reusable_exec_id}
+    if args.apply:
+        result["cleanup"] = service.cleanup_placeholders(
+            args.repo_root,
+            args.target_branch,
+            int(reusable_exec_id) if reusable_exec_id is not None else None,
+        )
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
