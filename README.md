@@ -12,8 +12,9 @@ Central source of truth for managed git workflow assets.
 
 ## Source Of Truth
 
-- The runnable git workflow sources live in `.git_scripts/` and `.githooks/`
-- `templates/full_codex_flow/files/.git_scripts/` and `templates/full_codex_flow/files/.githooks/` are exported from those runtime files
+- The runnable git workflow sources live in `.workflow-kit/` and `.githooks/`
+- `templates/full_codex_flow/files/.workflow-kit/` and `templates/full_codex_flow/files/.githooks/` are exported from those runtime files
+- Legacy managed `.git_scripts/*` and workflow `scripts/*` wrappers are removed during downstream apply; project-owned callers should invoke `.workflow-kit/*` directly
 - `python3 scripts/publish_release.py ...` automatically refreshes the templates before building a release
 
 ## Usage
@@ -48,9 +49,13 @@ The central repository itself uses `/Users/pi/PyCharmProject/PublicWorkRegister/
 ## Managed Git Workflow
 
 - Profile: `full_codex_flow`
-- Workflow version: `1.0.5`
+- Workflow version: `1.0.15`
 - Workflow source metadata: `.workflow-kit/source.json`
+- Managed workflow entrypoints live under `.workflow-kit/`.
+- Managed hooks live under `.githooks/`.
+- Legacy managed `.git_scripts/*` and workflow `scripts/*` wrappers are removed during release apply; project-owned scripts should call `.workflow-kit/*` directly.
 - This repository must not locally customize managed git workflow files.
+- Keep centrally managed workflow guidance in this fixed block; keep project-specific architecture and domain docs in the rest of the README.
 - Managed entrypoints run locally first; only after a failure do they check the published central release, auto-upgrade if outdated, and retry once.
 - Manual resync: rerun the workflow source repository recorded in `.workflow-kit/source.json` against this repository.
 <!-- workflow-kit:readme:end -->

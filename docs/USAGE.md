@@ -33,18 +33,18 @@
 
 当前约定如下：
 
-- 中央仓库里的 git 工作流源码在 `.git_scripts/` 和 `.githooks/`
-- 模板产物在 `templates/full_codex_flow/files/.git_scripts/` 和 `templates/full_codex_flow/files/.githooks/`
+- 中央仓库里的 git 工作流源码在 `.workflow-kit/` 和 `.githooks/`
+- 模板产物在 `templates/full_codex_flow/files/.workflow-kit/` 和 `templates/full_codex_flow/files/.githooks/`
 - 下游 `PublicWorkRegisterService` 模板在 `templates/full_codex_flow/files/src/main/python/public_work_register_service.py.tmpl`
 - 发布 release 时，`scripts/publish_release.py` 会先把源码导出回模板，再生成新的 release 工件
 
 说明：
 
-- 下游仓库中的 `.git_scripts/` 和 `.githooks/` 由本项目自动生成
-- 下游仓库中的 `.git_scripts/` 和 `.githooks/` 由下游仓库正常纳入版本控制，便于审查和回滚
+- 下游仓库中的 `.workflow-kit/` 和 `.githooks/` 由本项目自动生成
+- 下游仓库中的 `.workflow-kit/` 和 `.githooks/` 由下游仓库正常纳入版本控制，便于审查和回滚
 - 下游仓库中的项目级 `.venv` 不纳入版本控制；新 worktree 通过受管脚本自动补指向主仓共享环境的软链接，并在对应 worktree 的 `.git/info/exclude` 中登记这些链接，避免被 `session_sync` 误判为脏工作区
-- 下游仓库原本用于应用自身逻辑的 `scripts/` 会继续保留
-- 只有 git 工作流相关的受管脚本会迁移到 `.git_scripts/`
+- 下游仓库原本用于应用自身逻辑的 `scripts/` 会继续保留，但它们不再承载受管 workflow wrapper
+- git 工作流相关的受管入口统一固定在 `.workflow-kit/`
 - 中央仓库自身的 `PublicWorkRegister` 脚本依赖 `src/main/python/agent_workflow_kit/tooling/service/public_work_register_service.py`
 - 下游仓库中的 `src/main/python/<python_package_name>/tooling/service/public_work_register_service.py` 也由中央仓库统一下发，不应在子项目里各自分叉维护
 
@@ -54,7 +54,7 @@
   说明 profile 管理哪些文件
 - `repos/*.json`
   说明每个下游仓库的路径和 repo-specific 参数
-- `.git_scripts/`
+- `.workflow-kit/`
   中央仓库中的 git 工作流源码
 - `.githooks/`
   中央仓库中的 hooks 源码
@@ -75,12 +75,12 @@
 
 如果你要修改受管的 hooks 或 git 工作流脚本，请直接改：
 
-- `.git_scripts/`
+- `.workflow-kit/`
 - `.githooks/`
 
 不要直接改：
 
-- `templates/full_codex_flow/files/.git_scripts/`
+- `templates/full_codex_flow/files/.workflow-kit/`
 - `templates/full_codex_flow/files/.githooks/`
 
 因为模板会在发布时自动从源码重新导出。
@@ -103,7 +103,7 @@ python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.3
 
 这一步会做三件事：
 
-1. 把 `.git_scripts/` 和 `.githooks/` 导出回模板
+1. 把 `.workflow-kit/` 和 `.githooks/` 导出回模板
 2. 更新 `profiles/full_codex_flow/release.json`
 3. 更新 `profiles/full_codex_flow/managed-files.lock.json` 以及对应历史版本目录
 
@@ -115,12 +115,14 @@ python3 scripts/apply_release.py --repo-root /Users/pi/PyCharmProject/AgentTask 
 
 应用后会自动：
 
-- 生成下游仓库的 `.git_scripts/`
+- 生成下游仓库的 `.workflow-kit/`
 - 生成下游仓库的 `.githooks/`
 - 让 `new_worktree` / `post-checkout` / `new_exec` 自动修复 worktree 的共享 `.venv` 软链接
 - 同步维护 worktree 级 `.git/info/exclude`，让共享 `.venv` 软链接不会出现在 `git status` 中
 - 生成下游仓库的 `src/main/python/<python_package_name>/tooling/service/public_work_register_service.py`
-- 清理旧版受管 `scripts/*` git 工作流脚本
+- 删除旧版受管 `.git_scripts/*`
+- 删除旧版受管 `scripts/*` workflow wrapper；项目脚本若仍需调用 workflow，必须直接调用 `./.workflow-kit/*`
+- 刷洗 `AGENTS.md` / `README.md` 中散落的通用 workflow 文案，把中央受管 workflow 说明收束到固定 managed block
 - 清理旧的 workflow-kit managed `.git/info/exclude` block（如果存在）
 - 设置 `core.hooksPath=.githooks`
 
@@ -136,6 +138,7 @@ python3 scripts/apply_downstreams.py
 - 如果当前 release 已经过期，会提示你先重新发布
 - 对于 `current` 状态的子仓库，会直接跳过，不会创建空提交
 - 对于 `outdated` / `drift` 状态的子仓库，会在子仓库主目录旁创建 `*-wt-*` worktree，应用当前 release，并生成本地 commit
+- 如果子仓库缺失 `.workflow-kit/new_worktree.sh`，该子仓会直接失败并返回错误
 - 为兼容仍在旧 runtime 上的子仓库，中央 fan-out 创建 worktree 时会先临时跳过共享 `.venv` 链接，待新 release 应用完成后再补做修复
 - 这些下游提交默认只保留在本地，不会自动 push 或 auto-release；命令输出会返回 worktree 路径、分支名与 commit sha
 - 如果某个子仓库失败，其他子仓库仍会继续处理，但最终命令会返回非零退出码
@@ -269,7 +272,7 @@ python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/MyNewApp -
 接入成功后，下游仓库会新增：
 
 - `.workflow-kit/`
-- `.git_scripts/`
+- `.workflow-kit/`
 - `.githooks/`
 
 同时：
@@ -282,7 +285,7 @@ python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/MyNewApp -
 
 如果你修改了中央仓库并希望稳定下发，推荐顺序如下：
 
-1. 修改 `.git_scripts/` 或 `.githooks/`
+1. 修改 `.workflow-kit/` 或 `.githooks/`
 2. 运行 `python3 scripts/export_templates.py --repo-id AgentWorkflowKit`
 3. 运行必要测试
 4. 发布新版本 `python3 scripts/publish_release.py --profile full_codex_flow --version <new-version>`
@@ -291,7 +294,7 @@ python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/MyNewApp -
 
 ## 8. 常见问题
 
-### 8.1 为什么下游的 `.git_scripts/` 和 `.githooks/` 现在要进版本控制？
+### 8.1 为什么下游的 `.workflow-kit/` 和 `.githooks/` 现在要进版本控制？
 
 因为它们虽然由中央仓库生成，但仍然是下游仓库的实际运行入口。纳入版本控制后，评审、回滚、bisect 和工作区复制都会更直接，也能避免 worktree 因本地 exclude 而缺失运行文件。
 

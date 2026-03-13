@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # Managed by AgentWorkflowKit
-# Workflow-Version: 1.0.5
+# Workflow-Version: 1.0.15
 # Do not edit in this repository.
 # Source profile/file id: .githooks/post-commit
 
 __workflow_guard_root="$(git rev-parse --show-toplevel 2>/dev/null || { cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd; })"
 if [[ "${WORKFLOW_GUARD_ACTIVE:-0}" != "1" ]]; then
-  exec "$__workflow_guard_root/.git_scripts/workflow_guard.sh" "$0" "$@"
+  exec "$__workflow_guard_root/.workflow-kit/workflow_guard.sh" "$0" "$@"
 fi
 unset __workflow_guard_root
 
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
-DEFAULT_BRANCH="$("$ROOT/.git_scripts/git_default_branch.sh" "$ROOT")"
+DEFAULT_BRANCH="$("$ROOT/.workflow-kit/git_default_branch.sh" "$ROOT")"
 CURRENT_BRANCH="$(git branch --show-current || true)"
 
 if [[ -f "$ROOT/scripts/apply_downstreams.py" ]]; then

@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # Managed by AgentWorkflowKit
-# Workflow-Version: 1.0.5
+# Workflow-Version: 1.0.15
 # Do not edit in this repository.
 # Source profile/file id: .githooks/pre-push
 
 __workflow_guard_root="$(git rev-parse --show-toplevel 2>/dev/null || { cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd; })"
 if [[ "${WORKFLOW_GUARD_ACTIVE:-0}" != "1" ]]; then
-  exec "$__workflow_guard_root/.git_scripts/workflow_guard.sh" "$0" "$@"
+  exec "$__workflow_guard_root/.workflow-kit/workflow_guard.sh" "$0" "$@"
 fi
 unset __workflow_guard_root
 
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
-DEFAULT_BRANCH="$("$ROOT/.git_scripts/git_default_branch.sh" "$ROOT")"
-"$ROOT/.git_scripts/assert_workspace.sh"
+DEFAULT_BRANCH="$("$ROOT/.workflow-kit/git_default_branch.sh" "$ROOT")"
+"$ROOT/.workflow-kit/assert_workspace.sh"
 export PYTHONDONTWRITEBYTECODE=1
 if [[ -x "$ROOT/scripts/python_bin.sh" ]]; then
   export PYTHON_BIN="${PYTHON_BIN:-$("$ROOT/scripts/python_bin.sh")}"
@@ -55,7 +55,7 @@ while IFS= read -r update; do
   fi
 done
 
-if [[ -n "$AUTO_BRANCH" && -x "$ROOT/.git_scripts/session_push_autorelease.sh" ]]; then
+if [[ -n "$AUTO_BRANCH" && -x "$ROOT/.workflow-kit/session_push_autorelease.sh" ]]; then
   echo "[pre-push] Auto release triggered for ${AUTO_BRANCH} -> ${DEFAULT_BRANCH}"
   if env \
     -u GIT_DIR \
@@ -63,7 +63,7 @@ if [[ -n "$AUTO_BRANCH" && -x "$ROOT/.git_scripts/session_push_autorelease.sh" ]
     -u GIT_INDEX_FILE \
     -u GIT_PREFIX \
     CODEX_AUTORELEASE_IN_PROGRESS=1 \
-    "$ROOT/.git_scripts/session_push_autorelease.sh" --source-branch "$AUTO_BRANCH" --target "$DEFAULT_BRANCH"; then
+    "$ROOT/.workflow-kit/session_push_autorelease.sh" --source-branch "$AUTO_BRANCH" --target "$DEFAULT_BRANCH"; then
     echo "[pre-push] Auto release completed."
     echo "[pre-push] Note: original push is intentionally canceled because release already handled push/merge/cleanup." >&2
     exit 1

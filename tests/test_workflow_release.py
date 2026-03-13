@@ -55,7 +55,7 @@ class WorkflowReleaseTest(unittest.TestCase):
         )
 
     def copy_runtime_sources(self, target_root: Path) -> None:
-        shutil.copytree(self.workflow_root / ".git_scripts", target_root / ".git_scripts")
+        shutil.copytree(self.workflow_root / ".workflow-kit", target_root / ".workflow-kit")
         shutil.copytree(self.workflow_root / ".githooks", target_root / ".githooks")
 
     def copy_workflow_repo(self, workflow_root: Path) -> None:
@@ -138,7 +138,7 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.publish_release_for_repo_ids(workflow_root, installed_version, [repo_id])
         apply_release_to_repo(workflow_root=workflow_root, repo_root=repo_root, repo_id=repo_id)
         self.git(repo_root, "add", "-A")
-        self.git(repo_root, "add", "-f", ".git_scripts", ".githooks")
+        self.git(repo_root, "add", "-f", ".workflow-kit", ".githooks")
         self.git(repo_root, "commit", "--no-verify", "-m", "init")
         remote_root = repo_root.parent / f"{repo_id}-remote.git"
         subprocess.run(["git", "init", "--bare", str(remote_root)], check=True, capture_output=True, text=True)
@@ -188,8 +188,8 @@ class WorkflowReleaseTest(unittest.TestCase):
             workflow_version=self.version,
             release_hash=self.release_hash,
         )
-        task_assert = next(entry for entry in task_entries if entry["path"] == ".git_scripts/assert_workspace.sh")
-        transit_assert = next(entry for entry in transit_entries if entry["path"] == ".git_scripts/assert_workspace.sh")
+        task_assert = next(entry for entry in task_entries if entry["path"] == ".workflow-kit/assert_workspace.sh")
+        transit_assert = next(entry for entry in transit_entries if entry["path"] == ".workflow-kit/assert_workspace.sh")
         task_agents = next(entry for entry in task_entries if entry["path"] == "AGENTS.md")
         task_readme = next(entry for entry in task_entries if entry["path"] == "README.md")
         task_service = next(
@@ -244,10 +244,10 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.assertIn("AgentTransitStation", lock_payload["repositories"])
         task_paths = {entry["path"] for entry in lock_payload["repositories"]["AgentTask"]["entries"]}
         transit_paths = {entry["path"] for entry in lock_payload["repositories"]["AgentTransitStation"]["entries"]}
-        self.assertIn(".git_scripts/new_exec.sh", task_paths)
-        self.assertIn(".git_scripts/new_exec.sh", transit_paths)
-        self.assertIn(".git_scripts/ensure_shared_venv.sh", task_paths)
-        self.assertIn(".git_scripts/ensure_shared_venv.sh", transit_paths)
+        self.assertIn(".workflow-kit/new_exec.sh", task_paths)
+        self.assertIn(".workflow-kit/new_exec.sh", transit_paths)
+        self.assertIn(".workflow-kit/ensure_shared_venv.sh", task_paths)
+        self.assertIn(".workflow-kit/ensure_shared_venv.sh", transit_paths)
         self.assertIn("src/main/python/agent_task/tooling/service/public_work_register_service.py", task_paths)
         self.assertIn("src/main/python/agent_transit_station/tooling/service/public_work_register_service.py", transit_paths)
 
@@ -262,7 +262,7 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.assertIn("new content", updated)
         self.assertNotIn("\nold\n", updated)
 
-    def test_apply_release_to_repo_ignores_managed_git_runtime_and_removes_legacy_scripts(self) -> None:
+    def test_apply_release_to_repo_removes_legacy_managed_entrypoints(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             temp_root = Path(tmp_dir)
             workflow_root = temp_root / "workflow"
@@ -274,10 +274,25 @@ class WorkflowReleaseTest(unittest.TestCase):
             repo_root.mkdir(parents=True)
             subprocess.run(["git", "init", str(repo_root)], check=True, capture_output=True, text=True)
             self.write_repo_docs(repo_root)
+            legacy_git_scripts_dir = repo_root / ".git_scripts"
+            legacy_git_scripts_dir.mkdir(parents=True, exist_ok=True)
+            legacy_runtime_file = legacy_git_scripts_dir / "new_branch.sh"
+            legacy_runtime_file.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
             legacy_scripts_dir = repo_root / "scripts"
             legacy_scripts_dir.mkdir(parents=True, exist_ok=True)
-            legacy_file = legacy_scripts_dir / "new_branch.sh"
-            legacy_file.write_text("# legacy\n", encoding="utf-8")
+            legacy_wrapper_file = legacy_scripts_dir / "new_branch.sh"
+            legacy_wrapper_file.write_text(
+                """#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec "$ROOT/.workflow-kit/new_branch.sh" "$@"
+""",
+                encoding="utf-8",
+            )
+            project_script = legacy_scripts_dir / "project_helper.sh"
+            project_script.write_text("#!/usr/bin/env bash\necho project\n", encoding="utf-8")
 
             repo_config = {
                 "repo_id": "TempRepo",
@@ -311,10 +326,13 @@ class WorkflowReleaseTest(unittest.TestCase):
             )
 
             self.assertEqual("TempRepo", summary["repo_id"])
-            self.assertIn(str(legacy_file.resolve()), summary["removed_legacy_paths"])
-            self.assertFalse(legacy_file.exists())
-            self.assertTrue((repo_root / ".git_scripts" / "new_branch.sh").is_file())
-            self.assertTrue((repo_root / ".git_scripts" / "ensure_shared_venv.sh").is_file())
+            self.assertIn(str(legacy_runtime_file.resolve()), summary["removed_legacy_paths"])
+            self.assertIn(str(legacy_wrapper_file.resolve()), summary["removed_legacy_paths"])
+            self.assertFalse(legacy_runtime_file.exists())
+            self.assertFalse(legacy_wrapper_file.exists())
+            self.assertTrue(project_script.exists())
+            self.assertTrue((repo_root / ".workflow-kit" / "new_branch.sh").is_file())
+            self.assertTrue((repo_root / ".workflow-kit" / "ensure_shared_venv.sh").is_file())
             self.assertTrue(
                 (
                     repo_root
@@ -342,7 +360,7 @@ class WorkflowReleaseTest(unittest.TestCase):
                         "# keep-me",
                         "# workflow-kit managed excludes start",
                         ".githooks/",
-                        ".git_scripts/",
+                        ".workflow-kit/",
                         "# workflow-kit managed excludes end",
                         "# keep-me-too",
                         "",
@@ -359,7 +377,7 @@ class WorkflowReleaseTest(unittest.TestCase):
 
             exclude_text = exclude_path.read_text(encoding="utf-8")
             self.assertNotIn(".githooks/", exclude_text)
-            self.assertNotIn(".git_scripts/", exclude_text)
+            self.assertNotIn(".workflow-kit/", exclude_text)
             self.assertIn("# workflow-kit managed excludes start", exclude_text)
             self.assertIn("/.venv", exclude_text)
             self.assertIn("# keep-me", exclude_text)
@@ -386,14 +404,14 @@ class WorkflowReleaseTest(unittest.TestCase):
             self.assertTrue(exported)
 
             assert_workspace_template = (
-                workflow_root / "templates" / "full_codex_flow" / "files" / ".git_scripts" / "assert_workspace.sh.tmpl"
+                workflow_root / "templates" / "full_codex_flow" / "files" / ".workflow-kit" / "assert_workspace.sh.tmpl"
             ).read_text(encoding="utf-8")
             self.assertIn("{{ expected_workspace_root }}", assert_workspace_template)
             self.assertIn("{{ default_branch }}", assert_workspace_template)
             self.assertNotIn("/Users/pi/PyCharmProject/AgentWorkflowKit", assert_workspace_template)
 
             default_branch_template = (
-                workflow_root / "templates" / "full_codex_flow" / "files" / ".git_scripts" / "git_default_branch.sh.tmpl"
+                workflow_root / "templates" / "full_codex_flow" / "files" / ".workflow-kit" / "git_default_branch.sh.tmpl"
             ).read_text(encoding="utf-8")
             self.assertIn('PREFERRED_BRANCH="{{ default_branch }}"', default_branch_template)
 
@@ -405,10 +423,78 @@ class WorkflowReleaseTest(unittest.TestCase):
             self.assertNotIn("src/main/python/agent_workflow_kit", pre_push_template)
 
             register_sync_template = (
-                workflow_root / "templates" / "full_codex_flow" / "files" / ".git_scripts" / "public_work_register_sync.py.tmpl"
+                workflow_root / "templates" / "full_codex_flow" / "files" / ".workflow-kit" / "public_work_register_sync.py.tmpl"
             ).read_text(encoding="utf-8")
             self.assertIn("{{ python_package_name }}", register_sync_template)
             self.assertNotIn("agent_workflow_kit.tooling.service", register_sync_template)
+
+    def test_apply_release_brushes_legacy_agents_workflow_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            shutil.copytree(self.workflow_root / "profiles", workflow_root / "profiles")
+            shutil.copytree(self.workflow_root / "templates", workflow_root / "templates")
+            shutil.copytree(self.workflow_root / "repos", workflow_root / "repos")
+
+            repo_root = temp_root / "TempRepo"
+            repo_root.mkdir(parents=True)
+            subprocess.run(["git", "init", str(repo_root)], check=True, capture_output=True, text=True)
+            (repo_root / "README.md").write_text("# Temp Repo\n", encoding="utf-8")
+            (repo_root / "AGENTS.md").write_text(
+                """# AGENTS
+
+## Workspace Guard (Mandatory)
+
+Run `./scripts/assert_workspace.sh`.
+
+## Recommended Workflow
+
+Run `./scripts/new_exec.sh`.
+
+## Documentation Routing (Mandatory)
+
+- Keep docs current.
+""",
+                encoding="utf-8",
+            )
+            repo_config = {
+                "repo_id": "TempRepo",
+                "profile": "full_codex_flow",
+                "expected_workspace_root": str(repo_root),
+                "default_branch": "main",
+                "python_package_name": "temp_repo",
+                "compile_main_path": "src/main/python/temp_repo",
+                "compile_test_path": "src/test/python/temp_repo",
+                "public_work_register_dir": str(temp_root / "PublicWorkRegister" / "TempRepo"),
+            }
+            write_json(workflow_root / "repos" / "TempRepo.json", repo_config)
+            payload, lock_payload = prepare_release_artifacts(
+                workflow_root=workflow_root,
+                profile="full_codex_flow",
+                version="1.0.0",
+                repo_ids=["TempRepo"],
+            )
+            write_release_artifacts(
+                workflow_root=workflow_root,
+                profile="full_codex_flow",
+                version="1.0.0",
+                release_payload=payload,
+                lock_payload=lock_payload,
+            )
+
+            apply_release_to_repo(
+                workflow_root=workflow_root,
+                repo_root=repo_root,
+                repo_id="TempRepo",
+            )
+
+            agents_text = (repo_root / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertNotIn("## Workspace Guard (Mandatory)", agents_text)
+            self.assertNotIn("## Recommended Workflow", agents_text)
+            self.assertIn("## Documentation Routing (Mandatory)", agents_text)
+            self.assertIn("<!-- workflow-kit:agents:start -->", agents_text)
+            self.assertIn("<!-- workflow-kit:agents:end -->", agents_text)
+            self.assertIn("## Managed Workflow Contract", agents_text)
 
     def test_ensure_shared_venv_links_primary_virtualenv_into_worktree(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -429,15 +515,15 @@ class WorkflowReleaseTest(unittest.TestCase):
                 text=True,
             )
             (repo_root / "README.md").write_text("# Temp Repo\n", encoding="utf-8")
-            (repo_root / ".git_scripts").mkdir(parents=True, exist_ok=True)
-            helper_path = repo_root / ".git_scripts" / "ensure_shared_venv.sh"
+            (repo_root / ".workflow-kit").mkdir(parents=True, exist_ok=True)
+            helper_path = repo_root / ".workflow-kit" / "ensure_shared_venv.sh"
             helper_path.write_text(
-                (self.workflow_root / ".git_scripts" / "ensure_shared_venv.sh").read_text(encoding="utf-8"),
+                (self.workflow_root / ".workflow-kit" / "ensure_shared_venv.sh").read_text(encoding="utf-8"),
                 encoding="utf-8",
             )
             helper_path.chmod(0o755)
             subprocess.run(
-                ["git", "-C", str(repo_root), "add", "README.md", ".git_scripts/ensure_shared_venv.sh"],
+                ["git", "-C", str(repo_root), "add", "README.md", ".workflow-kit/ensure_shared_venv.sh"],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -550,7 +636,7 @@ class WorkflowReleaseTest(unittest.TestCase):
             outdated = check_repo_release(repo_root=repo_root, workflow_root=workflow_root, repo_id="TempRepo")
             self.assertEqual("outdated", outdated["status"])
 
-            target_script = repo_root / ".git_scripts" / "new_branch.sh"
+            target_script = repo_root / ".workflow-kit" / "new_branch.sh"
             target_script.write_text(target_script.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
             drift = check_repo_release(repo_root=repo_root, workflow_root=workflow_root, repo_id="TempRepo")
             self.assertEqual("drift", drift["status"])
@@ -618,7 +704,7 @@ class WorkflowReleaseTest(unittest.TestCase):
             )
 
             result = subprocess.run(
-                [str(repo_root / ".git_scripts" / "git_default_branch.sh"), str(repo_root)],
+                [str(repo_root / ".workflow-kit" / "git_default_branch.sh"), str(repo_root)],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -646,7 +732,7 @@ class WorkflowReleaseTest(unittest.TestCase):
             entry_script.chmod(0o755)
 
             result = subprocess.run(
-                [str(repo_root / ".git_scripts" / "workflow_guard.sh"), str(entry_script)],
+                [str(repo_root / ".workflow-kit" / "workflow_guard.sh"), str(entry_script)],
                 cwd=repo_root,
                 check=False,
                 capture_output=True,
@@ -697,7 +783,7 @@ exit 42
             entry_script.chmod(0o755)
 
             result = subprocess.run(
-                [str(repo_root / ".git_scripts" / "workflow_guard.sh"), str(entry_script)],
+                [str(repo_root / ".workflow-kit" / "workflow_guard.sh"), str(entry_script)],
                 cwd=repo_root,
                 check=False,
                 capture_output=True,
@@ -782,7 +868,7 @@ exit 42
             primary_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             primary_python.chmod(0o755)
 
-            legacy_helper = repo_root / ".git_scripts" / "ensure_shared_venv.sh"
+            legacy_helper = repo_root / ".workflow-kit" / "ensure_shared_venv.sh"
             legacy_helper.write_text(
                 """#!/usr/bin/env bash
 set -euo pipefail
@@ -823,7 +909,7 @@ fi
             )
             legacy_helper.chmod(0o755)
             (repo_root / ".gitignore").write_text("__pycache__/\n*.py[cod]\n", encoding="utf-8")
-            self.git(repo_root, "add", ".git_scripts/ensure_shared_venv.sh")
+            self.git(repo_root, "add", ".workflow-kit/ensure_shared_venv.sh")
             self.git(repo_root, "add", ".gitignore")
             self.git(repo_root, "commit", "--no-verify", "-m", "use legacy shared venv helper")
             self.git(repo_root, "push", "--no-verify", "origin", "main")
@@ -874,7 +960,7 @@ fi
 
             repo_root = temp_root / "TempRepo"
             self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
-            managed_script = repo_root / ".git_scripts" / "new_branch.sh"
+            managed_script = repo_root / ".workflow-kit" / "new_branch.sh"
             managed_script.write_text(
                 managed_script.read_text(encoding="utf-8") + "\n# local drift\n",
                 encoding="utf-8",
@@ -933,7 +1019,7 @@ fi
             self.bootstrap_managed_repo(workflow_root, bad_repo_root, repo_id="BadRepo", installed_version="1.0.0")
 
             self.publish_release_for_repo_ids(workflow_root, "1.0.1", ["WorkflowRepo", "GoodRepo", "BadRepo"])
-            missing_script = bad_repo_root / ".git_scripts" / "new_worktree.sh"
+            missing_script = bad_repo_root / ".workflow-kit" / "new_worktree.sh"
             missing_script.unlink()
 
             result = subprocess.run(

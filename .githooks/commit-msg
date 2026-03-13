@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Managed by AgentWorkflowKit
-# Workflow-Version: 1.0.5
+# Workflow-Version: 1.0.15
 # Do not edit in this repository.
 # Source profile/file id: .githooks/commit-msg
 
 __workflow_guard_root="$(git rev-parse --show-toplevel 2>/dev/null || { cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd; })"
 if [[ "${WORKFLOW_GUARD_ACTIVE:-0}" != "1" ]]; then
-  exec "$__workflow_guard_root/.git_scripts/workflow_guard.sh" "$0" "$@"
+  exec "$__workflow_guard_root/.workflow-kit/workflow_guard.sh" "$0" "$@"
 fi
 unset __workflow_guard_root
 
@@ -37,7 +37,7 @@ if [[ -n "$exec_id" ]]; then
   record_file="$ROOT/docs/exec_records/${exec_id}.md"
   if [[ ! -f "$record_file" ]]; then
     echo "Execution record missing: $record_file" >&2
-    echo "Run ./.git_scripts/new_exec.sh on your task branch before commit." >&2
+    echo "Run ./.workflow-kit/new_exec.sh on your task branch before commit." >&2
     exit 1
   fi
 
@@ -47,7 +47,7 @@ if [[ -n "$exec_id" ]]; then
       END { exit(found ? 0 : 1) }
     '; then
     echo "Execution ID [${exec_id}] already exists in commit history." >&2
-    echo "Allocate a new one: ./.git_scripts/new_exec.sh" >&2
+    echo "Allocate a new one: ./.workflow-kit/new_exec.sh" >&2
     exit 1
   fi
 fi

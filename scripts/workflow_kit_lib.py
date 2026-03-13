@@ -12,8 +12,10 @@ from typing import Any
 
 
 DEFAULT_PROFILE = "full_codex_flow"
-MANAGED_GIT_SCRIPTS_DIR = ".git_scripts"
+MANAGED_WORKFLOW_DIR = ".workflow-kit"
 MANAGED_HOOKS_DIR = ".githooks"
+LEGACY_GIT_SCRIPTS_DIR = ".git_scripts"
+LEGACY_SCRIPT_WRAPPER_DIR = "scripts"
 MANAGED_RUNTIME_BASENAMES = (
     "workflow_guard.sh",
     "assert_workspace.sh",
@@ -43,6 +45,22 @@ SHARED_VENV_NAMES = (
 WORKFLOW_EXCLUDE_MARKER_START = "# workflow-kit managed excludes start"
 WORKFLOW_EXCLUDE_MARKER_END = "# workflow-kit managed excludes end"
 DOWNSTREAM_EXCLUDE_PATTERNS = tuple(f"/{name}" for name in SHARED_VENV_NAMES)
+MANAGED_DOC_MARKERS = {
+    "AGENTS.md": ("<!-- workflow-kit:agents:start -->", "<!-- workflow-kit:agents:end -->"),
+    "README.md": ("<!-- workflow-kit:readme:start -->", "<!-- workflow-kit:readme:end -->"),
+}
+LEGACY_AGENTS_WORKFLOW_SECTION_TITLES = {
+    "Workspace Guard",
+    "Session Start Default",
+    "Git Hooks Enable",
+    "Session End Default",
+    "Code Edit Guard",
+    "Execution Confirmation Policy",
+    "Disallowed States",
+    "Recommended Workflow",
+    "Branch Policy",
+    "Commit Policy",
+}
 CURRENT_RELEASE_EXIT = 0
 OUTDATED_RELEASE_EXIT = 10
 DRIFT_RELEASE_EXIT = 20
@@ -359,12 +377,122 @@ def ensure_core_hooks_path(repo_root: Path, hooks_path: str = MANAGED_HOOKS_DIR)
 
 def remove_legacy_managed_runtime_files(repo_root: Path) -> list[str]:
     removed_paths: list[str] = []
+    legacy_git_scripts_dir = repo_root / LEGACY_GIT_SCRIPTS_DIR
     for basename in MANAGED_RUNTIME_BASENAMES:
-        legacy_path = repo_root / "scripts" / basename
-        if legacy_path.is_file():
-            legacy_path.unlink()
-            removed_paths.append(str(legacy_path))
+        legacy_runtime_path = legacy_git_scripts_dir / basename
+        if legacy_runtime_path.exists():
+            legacy_runtime_path.unlink()
+            removed_paths.append(str(legacy_runtime_path.resolve()))
+
+        legacy_wrapper_path = repo_root / LEGACY_SCRIPT_WRAPPER_DIR / basename
+        if not legacy_wrapper_path.is_file():
+            continue
+        if not _is_legacy_workflow_wrapper(legacy_wrapper_path, basename):
+            continue
+        legacy_wrapper_path.unlink()
+        removed_paths.append(str(legacy_wrapper_path.resolve()))
+
+    if legacy_git_scripts_dir.is_dir() and not any(legacy_git_scripts_dir.iterdir()):
+        legacy_git_scripts_dir.rmdir()
     return removed_paths
+
+
+def _is_legacy_workflow_wrapper(path: Path, basename: str) -> bool:
+    content = path.read_text(encoding="utf-8")
+    legacy_shell_wrappers = {
+        (
+            "#!/usr/bin/env bash\n\n"
+            "set -euo pipefail\n\n"
+            'ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"\n'
+            f'exec "$ROOT/{MANAGED_WORKFLOW_DIR}/{basename}" "$@"\n'
+        ),
+        (
+            "#!/usr/bin/env bash\n\n"
+            "set -euo pipefail\n\n"
+            'ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"\n'
+            f'exec "$ROOT/{LEGACY_GIT_SCRIPTS_DIR}/{basename}" "$@"\n'
+        ),
+    }
+    legacy_python_wrappers = {
+        (
+            "#!/usr/bin/env python3\n"
+            "from __future__ import annotations\n\n"
+            "import os\n"
+            "import sys\n"
+            "from pathlib import Path\n\n"
+            "ROOT = Path(__file__).resolve().parents[1]\n"
+            f'TARGET = ROOT / "{MANAGED_WORKFLOW_DIR}" / "{basename}"\n'
+            'os.execv(str(TARGET), [str(TARGET), *sys.argv[1:]])\n'
+        ),
+        (
+            "#!/usr/bin/env python3\n"
+            "from __future__ import annotations\n\n"
+            "import os\n"
+            "import sys\n"
+            "from pathlib import Path\n\n"
+            "ROOT = Path(__file__).resolve().parents[1]\n"
+            f'TARGET = ROOT / "{LEGACY_GIT_SCRIPTS_DIR}" / "{basename}"\n'
+            'os.execv(str(TARGET), [str(TARGET), *sys.argv[1:]])\n'
+        ),
+    }
+    candidates = legacy_python_wrappers if basename.endswith(".py") else legacy_shell_wrappers
+    return content in candidates
+
+
+def refresh_workflow_doc_entrypoints(repo_root: Path) -> list[str]:
+    refreshed_paths: list[str] = []
+    for relative_path, markers in MANAGED_DOC_MARKERS.items():
+        target_path = repo_root / relative_path
+        if not target_path.is_file():
+            continue
+        original = target_path.read_text(encoding="utf-8")
+        start_marker, end_marker = markers
+        if start_marker in original and end_marker in original:
+            before, remainder = original.split(start_marker, 1)
+            managed, after = remainder.split(end_marker, 1)
+            updated = (
+                before.replace(".git_scripts", MANAGED_WORKFLOW_DIR)
+                + start_marker
+                + managed
+                + end_marker
+                + after.replace(".git_scripts", MANAGED_WORKFLOW_DIR)
+            )
+        else:
+            updated = original.replace(".git_scripts", MANAGED_WORKFLOW_DIR)
+        if relative_path == "AGENTS.md":
+            updated = _strip_legacy_agents_workflow_sections(updated)
+        if updated != original:
+            target_path.write_text(updated, encoding="utf-8")
+            refreshed_paths.append(str(target_path))
+    return refreshed_paths
+
+
+def _strip_legacy_agents_workflow_sections(text: str) -> str:
+    start_marker = MANAGED_DOC_MARKERS["AGENTS.md"][0]
+    lines = text.splitlines(keepends=True)
+    kept: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        match = re.match(r"^(##)\s+(.+?)\s*$", line.rstrip("\n"))
+        if match:
+            title = re.sub(r"\s+\(Mandatory\)$", "", match.group(2)).strip()
+            if title in LEGACY_AGENTS_WORKFLOW_SECTION_TITLES:
+                index += 1
+                while index < len(lines):
+                    next_line = lines[index]
+                    if next_line.rstrip("\n") == start_marker:
+                        break
+                    next_match = re.match(r"^(##)\s+(.+?)\s*$", next_line.rstrip("\n"))
+                    if next_match:
+                        break
+                    index += 1
+                continue
+        kept.append(line)
+        index += 1
+    updated = "".join(kept)
+    updated = re.sub(r"\n{3,}", "\n\n", updated)
+    return updated.strip() + "\n"
 
 
 def repo_ids_from_workflow_root(workflow_root: Path) -> list[str]:
@@ -454,7 +582,7 @@ def managed_runtime_entries(workflow_root: Path, profile: str) -> list[ManagedEn
         entry
         for entry in managed_entries_from_manifest(profile_manifest)
         if entry.entry_type == "file"
-        and (entry.output.startswith(f"{MANAGED_GIT_SCRIPTS_DIR}/") or entry.output.startswith(f"{MANAGED_HOOKS_DIR}/"))
+        and (entry.output.startswith(f"{MANAGED_HOOKS_DIR}/") or entry.output.startswith(f"{MANAGED_WORKFLOW_DIR}/"))
     ]
 
 
@@ -490,8 +618,8 @@ def placeholderize_runtime_entry(
             'EXPECTED_ROOT="${EXPECTED_WORKSPACE_ROOT:-{{ expected_workspace_root }}}"',
         ),
         (
-            f'DEFAULT_BRANCH="$("$ROOT/{MANAGED_GIT_SCRIPTS_DIR}/git_default_branch.sh" "$EXPECTED_ROOT" 2>/dev/null || echo {default_branch})"',
-            'DEFAULT_BRANCH="$("$ROOT/.git_scripts/git_default_branch.sh" "$EXPECTED_ROOT" 2>/dev/null || echo {{ default_branch }})"',
+            f'DEFAULT_BRANCH="$("$ROOT/{MANAGED_WORKFLOW_DIR}/git_default_branch.sh" "$EXPECTED_ROOT" 2>/dev/null || echo {default_branch})"',
+            f'DEFAULT_BRANCH="$("$ROOT/{MANAGED_WORKFLOW_DIR}/git_default_branch.sh" "$EXPECTED_ROOT" 2>/dev/null || echo {{{{ default_branch }}}})"',
         ),
         (f'echo "{default_branch}"', 'echo "{{ default_branch }}"'),
         (
@@ -518,6 +646,23 @@ def placeholderize_runtime_entry(
 
     for before, after in replacements:
         placeholderized = placeholderized.replace(before, after)
+
+    json_field_patterns = {
+        r'("workflow_repo_root"\s*:\s*)".*?"': r'\1"{{ workflow_repo_root }}"',
+        r'("source_repo_root"\s*:\s*)".*?"': r'\1"{{ workflow_repo_root }}"',
+        r'("repo_id"\s*:\s*)".*?"': r'\1"{{ repo_id }}"',
+        r'("profile"\s*:\s*)".*?"': r'\1"{{ profile }}"',
+        r'("expected_workspace_root"\s*:\s*)".*?"': r'\1"{{ expected_workspace_root }}"',
+        r'("default_branch"\s*:\s*)".*?"': r'\1"{{ default_branch }}"',
+        r'("python_package_name"\s*:\s*)".*?"': r'\1"{{ python_package_name }}"',
+        r'("compile_main_path"\s*:\s*)".*?"': r'\1"{{ compile_main_path }}"',
+        r'("compile_test_path"\s*:\s*)".*?"': r'\1"{{ compile_test_path }}"',
+        r'("public_work_register_dir"\s*:\s*)".*?"': r'\1"{{ public_work_register_dir }}"',
+        r'("workflow_version"\s*:\s*)".*?"': r'\1"{{ workflow_version }}"',
+        r'("release_manifest_hash"\s*:\s*)".*?"': r'\1"{{ release_manifest_hash }}"',
+    }
+    for pattern, replacement in json_field_patterns.items():
+        placeholderized = re.sub(pattern, replacement, placeholderized)
     return placeholderized
 
 
@@ -577,8 +722,10 @@ def apply_release_to_repo(
     )
     apply_rendered_entries(resolved_repo_root, rendered_entries)
     removed_legacy_paths: list[str] = []
+    refreshed_doc_paths: list[str] = []
     if resolved_repo_root != workflow_root.resolve():
         removed_legacy_paths = remove_legacy_managed_runtime_files(resolved_repo_root)
+        refreshed_doc_paths = refresh_workflow_doc_entrypoints(resolved_repo_root)
         ensure_local_exclude_patterns(resolved_repo_root)
         ensure_core_hooks_path(resolved_repo_root)
     return {
@@ -588,6 +735,7 @@ def apply_release_to_repo(
         "workflow_version": workflow_version,
         "managed_entry_count": len(rendered_entries),
         "removed_legacy_paths": removed_legacy_paths,
+        "refreshed_doc_paths": refreshed_doc_paths,
     }
 
 
@@ -915,7 +1063,7 @@ def submit_release_to_repo_via_worktree_commit(
             # current release is applied and can repair excludes first.
             "SKIP_SHARED_VENV_LINK": "1",
         }
-        script_path = resolved_repo_root / ".git_scripts" / "new_worktree.sh"
+        script_path = resolved_repo_root / MANAGED_WORKFLOW_DIR / "new_worktree.sh"
         if not script_path.is_file():
             raise FileNotFoundError(f"downstream worktree script not found: {script_path}")
 
@@ -943,7 +1091,7 @@ def submit_release_to_repo_via_worktree_commit(
             repo_id=resolved_repo_id,
             profile=resolved_profile,
         )
-        repair_shared_venv_script = worktree_root / ".git_scripts" / "ensure_shared_venv.sh"
+        repair_shared_venv_script = worktree_root / MANAGED_WORKFLOW_DIR / "ensure_shared_venv.sh"
         if repair_shared_venv_script.is_file():
             _run_command(
                 [str(repair_shared_venv_script), "--quiet"],
