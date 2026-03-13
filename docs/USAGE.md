@@ -120,7 +120,7 @@ python3 scripts/apply_release.py --repo-root /Users/pi/PyCharmProject/AgentTask 
 - 让 `new_worktree` / `post-checkout` / `new_exec` 自动修复 worktree 的共享 `.venv` 软链接
 - 同步维护 worktree 级 `.git/info/exclude`，让共享 `.venv` 软链接不会出现在 `git status` 中
 - 生成下游仓库的 `src/main/python/<python_package_name>/tooling/service/public_work_register_service.py`
-- 删除旧版受管 `.git_scripts/*`
+- 删除旧版受管 workflow 入口文件
 - 删除旧版受管 `scripts/*` workflow wrapper；项目脚本若仍需调用 workflow，必须直接调用 `./.workflow-kit/*`
 - 刷洗 `AGENTS.md` / `README.md` 中散落的通用 workflow 文案，把中央受管 workflow 说明收束到固定 managed block
 - 清理旧的 workflow-kit managed `.git/info/exclude` block（如果存在）
