@@ -333,9 +333,33 @@ class WorkflowReleaseTest(unittest.TestCase):
                     text=True,
                 ).stdout.strip()
             )
+            exclude_path.write_text(
+                "\n".join(
+                    [
+                        "# keep-me",
+                        "# workflow-kit managed excludes start",
+                        ".githooks/",
+                        ".git_scripts/",
+                        "# workflow-kit managed excludes end",
+                        "# keep-me-too",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            summary = apply_release_to_repo(
+                workflow_root=workflow_root,
+                repo_root=repo_root,
+                repo_id="TempRepo",
+            )
+
             exclude_text = exclude_path.read_text(encoding="utf-8")
-            self.assertIn(".githooks/", exclude_text)
-            self.assertIn(".git_scripts/", exclude_text)
+            self.assertNotIn(".githooks/", exclude_text)
+            self.assertNotIn(".git_scripts/", exclude_text)
+            self.assertNotIn("# workflow-kit managed excludes start", exclude_text)
+            self.assertIn("# keep-me", exclude_text)
+            self.assertIn("# keep-me-too", exclude_text)
             hooks_path = subprocess.run(
                 ["git", "-C", str(repo_root), "config", "--local", "--get", "core.hooksPath"],
                 check=True,
@@ -352,6 +376,7 @@ class WorkflowReleaseTest(unittest.TestCase):
             shutil.copytree(self.workflow_root / "templates", workflow_root / "templates")
             shutil.copytree(self.workflow_root / "repos", workflow_root / "repos")
             self.copy_runtime_sources(workflow_root)
+            write_json(workflow_root / ".workflow-kit" / "source.json", {"repo_id": "AgentWorkflowKit"})
 
             exported = export_runtime_templates(workflow_root=workflow_root, repo_id="AgentWorkflowKit")
             self.assertTrue(exported)
@@ -362,6 +387,11 @@ class WorkflowReleaseTest(unittest.TestCase):
             self.assertIn("{{ expected_workspace_root }}", assert_workspace_template)
             self.assertIn("{{ default_branch }}", assert_workspace_template)
             self.assertNotIn("/Users/pi/PyCharmProject/AgentWorkflowKit", assert_workspace_template)
+
+            default_branch_template = (
+                workflow_root / "templates" / "full_codex_flow" / "files" / ".git_scripts" / "git_default_branch.sh.tmpl"
+            ).read_text(encoding="utf-8")
+            self.assertIn('PREFERRED_BRANCH="{{ default_branch }}"', default_branch_template)
 
             pre_push_template = (
                 workflow_root / "templates" / "full_codex_flow" / "files" / ".githooks" / "pre-push.tmpl"
@@ -437,6 +467,76 @@ class WorkflowReleaseTest(unittest.TestCase):
             target_script.write_text(target_script.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
             drift = check_repo_release(repo_root=repo_root, workflow_root=workflow_root, repo_id="TempRepo")
             self.assertEqual("drift", drift["status"])
+
+    def test_git_default_branch_prefers_repo_default_branch_over_stale_origin_head(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+            self.copy_runtime_sources(workflow_root)
+            write_json(workflow_root / ".workflow-kit" / "source.json", {"repo_id": "AgentWorkflowKit"})
+            export_runtime_templates(workflow_root=workflow_root, repo_id="AgentWorkflowKit")
+
+            repo_root = temp_root / "TempRepo"
+            repo_root.mkdir(parents=True)
+            subprocess.run(["git", "init", str(repo_root)], check=True, capture_output=True, text=True)
+            subprocess.run(
+                ["git", "-C", str(repo_root), "config", "user.name", "Workflow Test"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo_root), "config", "user.email", "workflow@example.com"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.write_repo_docs(repo_root)
+            self.write_temp_repo_config(workflow_root, repo_root)
+            self.publish_temp_release(workflow_root, "1.0.0")
+            apply_release_to_repo(workflow_root=workflow_root, repo_root=repo_root, repo_id="TempRepo")
+
+            readme_path = repo_root / "README.md"
+            subprocess.run(["git", "-C", str(repo_root), "add", str(readme_path)], check=True, capture_output=True, text=True)
+            subprocess.run(
+                ["git", "-C", str(repo_root), "commit", "--no-verify", "-m", "init"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            head_sha = subprocess.run(
+                ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            subprocess.run(
+                ["git", "-C", str(repo_root), "update-ref", "refs/remotes/origin/master", head_sha],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo_root), "update-ref", "refs/remotes/origin/main", head_sha],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo_root), "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            result = subprocess.run(
+                [str(repo_root / ".git_scripts" / "git_default_branch.sh"), str(repo_root)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual("main", result.stdout.strip())
 
     def test_workflow_guard_skips_release_check_when_entry_succeeds(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

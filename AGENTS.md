@@ -45,6 +45,8 @@ This repository is the central source of truth for downstream managed workflow f
 - Templates under `templates/full_codex_flow/files/.git_scripts/` and `templates/full_codex_flow/files/.githooks/` are generated artifacts, not the primary editing target.
 - Downstream `PublicWorkRegisterService` runtime files are also managed here via the profile template at `templates/full_codex_flow/files/src/main/python/public_work_register_service.py.tmpl`.
 - If you change `.git_scripts/`, `.githooks/`, `profiles/`, `repos/`, or release tooling in `scripts/`, publish a new release before expecting downstream auto-apply to succeed.
+- 下游仓库中的受管 `.git_scripts/` / `.githooks/` 默认应保持纳入版本控制，中央 apply 不再把它们写入 `.git/info/exclude`。
+- 默认分支探测以仓库 manifest 中声明的 `default_branch` 为准；只要该分支已存在，本地脚本不应因为陈旧的 `origin/HEAD` 继续回退到旧默认分支。
 
 Required sequence for workflow changes:
 

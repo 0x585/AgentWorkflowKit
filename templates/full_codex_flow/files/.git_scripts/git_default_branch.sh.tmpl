@@ -13,22 +13,32 @@ unset __workflow_guard_root
 set -euo pipefail
 
 ROOT="${1:-$(git rev-parse --show-toplevel)}"
+PREFERRED_BRANCH="{{ default_branch }}"
+
+branch_exists() {
+  local branch_name="$1"
+  git -C "$ROOT" show-ref --verify --quiet "refs/heads/${branch_name}" \
+    || git -C "$ROOT" show-ref --verify --quiet "refs/remotes/origin/${branch_name}"
+}
+
+if branch_exists "$PREFERRED_BRANCH"; then
+  echo "$PREFERRED_BRANCH"
+  exit 0
+fi
 
 if ref="$(git -C "$ROOT" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"; then
   echo "${ref#origin/}"
   exit 0
 fi
 
-if git -C "$ROOT" show-ref --verify --quiet refs/heads/main \
-  || git -C "$ROOT" show-ref --verify --quiet refs/remotes/origin/main; then
+if branch_exists main; then
   echo "{{ default_branch }}"
   exit 0
 fi
 
-if git -C "$ROOT" show-ref --verify --quiet refs/heads/master \
-  || git -C "$ROOT" show-ref --verify --quiet refs/remotes/origin/master; then
+if branch_exists master; then
   echo "master"
   exit 0
 fi
 
-echo "{{ default_branch }}"
+echo "$PREFERRED_BRANCH"
