@@ -41,7 +41,7 @@
 说明：
 
 - 下游仓库中的 `.git_scripts/` 和 `.githooks/` 由本项目自动生成
-- 下游仓库中的 `.git_scripts/` 和 `.githooks/` 会写入 `.git/info/exclude`，不参与版本控制
+- 下游仓库中的 `.git_scripts/` 和 `.githooks/` 是受管源码，可以随 release 一起进入子仓库提交
 - 下游仓库原本用于应用自身逻辑的 `scripts/` 会继续保留
 - 只有 git 工作流相关的受管脚本会迁移到 `.git_scripts/`
 - 中央仓库自身的 `PublicWorkRegister` 脚本依赖 `src/main/python/agent_workflow_kit/tooling/service/public_work_register_service.py`
@@ -64,7 +64,7 @@
 - `scripts/apply_release.py`
   应用当前 release 到单个仓库
 - `scripts/apply_downstreams.py`
-  应用当前 release 到所有下游仓库
+  为所有需要更新的下游仓库创建本地 worktree 提交
 - `scripts/check_release.py`
   校验某个仓库是否和当前 release 一致
 
@@ -131,6 +131,10 @@ python3 scripts/apply_downstreams.py
 
 - 这条命令只会在当前 release 工件和源码状态一致时执行
 - 如果当前 release 已经过期，会提示你先重新发布
+- 对于 `current` 状态的子仓库，会直接跳过，不会创建空提交
+- 对于 `outdated` / `drift` 状态的子仓库，会在子仓库主目录旁创建 `*-wt-*` worktree，应用当前 release，并生成本地 commit
+- 这些下游提交默认只保留在本地，不会自动 push 或 auto-release；命令输出会返回 worktree 路径、分支名与 commit sha
+- 如果某个子仓库失败，其他子仓库仍会继续处理，但最终命令会返回非零退出码
 
 ### 4.6 校验仓库状态
 
@@ -157,8 +161,9 @@ python3 scripts/apply_downstreams.py
 
 这表示：
 
-- 只要当前 release 工件是最新的，中央仓库提交后会自动把当前 release 应用到下游仓库
+- 只要当前 release 工件是最新的，中央仓库提交后会自动为需要更新的下游仓库创建本地 worktree 提交
 - 如果你只是修改了源码但还没有发布新的 release，这个自动动作会拒绝执行，并提示先发布
+- 下游仓库的提交不会在这里自动 push；后续是否 push/release 由对应子仓库自行处理
 
 如果你临时不想触发自动应用，可以在当前命令前加：
 
