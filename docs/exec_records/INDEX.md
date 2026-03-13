@@ -2,7 +2,10 @@
 
 | ID | Date | Summary |
 |---|---|---|
+| 1012 | 2026-03-13 | TODO |
+| 1011 | 2026-03-13 | TODO |
 | 1009 | 2026-03-13 | TODO |
+| 1008 | 2026-03-13 | TODO |
 | 1007 | 2026-03-13 | TODO |
 | 1006 | 2026-03-13 | fix(workflow): remove central repo name from downstream docs block |
 | 1005 | 2026-03-13 | feat(workflow): centralize public work register runtime |

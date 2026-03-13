@@ -1,0 +1,16 @@
+[1011] fix(workflow): restore 1.0.8 history and publish 1.0.9
+
+# Changes
+# - restore the missing full_codex_flow 1.0.8 release history on top of the current workflow branch
+# - publish full_codex_flow 1.0.9 so downstream repos move from invalid to outdated/upgradeable
+
+# Tests
+# - python3 -m compileall .git_scripts scripts tests
+# - python3 -m unittest tests.test_workflow_release
+# - python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/AgentTask --repo-id AgentTask --json
+# - python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/AgentTransitStation --repo-id AgentTransitStation --json
+# - python3 scripts/export_templates.py --repo-id AgentWorkflowKit
+# - python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.9
+
+# Risks
+# - real downstream apply will still fail if child repos already have colliding workflow-release-1-0-9 branches/worktrees

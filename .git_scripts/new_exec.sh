@@ -46,6 +46,9 @@ ROOT=$(git rev-parse --show-toplevel)
 ASSERT_PURPOSE=code "$ROOT/.git_scripts/assert_workspace.sh"
 INDEX_FILE="$ROOT/docs/exec_records/INDEX.md"
 TARGET_BRANCH="$("$ROOT/.git_scripts/git_default_branch.sh" "$ROOT")"
+if [[ -x "$ROOT/.git_scripts/ensure_shared_venv.sh" ]]; then
+  "$ROOT/.git_scripts/ensure_shared_venv.sh" --quiet || true
+fi
 
 if [[ ! -f "$INDEX_FILE" ]]; then
   echo "INDEX.md not found at $INDEX_FILE" >&2

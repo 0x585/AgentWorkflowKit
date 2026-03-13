@@ -1,0 +1,14 @@
+[1008] feat(workflow): share venv across worktrees
+
+# Changes
+# - add managed ensure_shared_venv workflow entry and wire it into new_worktree/new_exec/post-checkout
+# - publish full_codex_flow 1.0.8 and update workflow docs/tests
+
+# Tests
+# - python3 -m compileall .git_scripts scripts tests
+# - PYTHONPATH=src/main/python python3 -m unittest tests.test_workflow_release
+# - python3 scripts/export_templates.py --repo-id AgentWorkflowKit
+# - python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.8
+
+# Risks
+# - downstream worktrees now rely on the primary repo's local virtualenv being healthy

@@ -31,6 +31,12 @@ if ! git -C "$ROOT" rev-parse --verify --quiet HEAD >/dev/null; then
   exit 0
 fi
 
+if [[ -x "$ROOT/.git_scripts/ensure_shared_venv.sh" ]]; then
+  if ! "$ROOT/.git_scripts/ensure_shared_venv.sh" --quiet; then
+    echo "[post-checkout] Warning: failed to repair shared virtualenv link for $ROOT" >&2
+  fi
+fi
+
 if ! "$ROOT/.git_scripts/assert_workspace.sh" >/dev/null 2>&1; then
   echo "[post-checkout] Skip auto-sync: workspace guard not satisfied for $ROOT" >&2
   exit 0

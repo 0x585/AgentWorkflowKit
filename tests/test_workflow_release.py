@@ -246,6 +246,8 @@ class WorkflowReleaseTest(unittest.TestCase):
         transit_paths = {entry["path"] for entry in lock_payload["repositories"]["AgentTransitStation"]["entries"]}
         self.assertIn(".git_scripts/new_exec.sh", task_paths)
         self.assertIn(".git_scripts/new_exec.sh", transit_paths)
+        self.assertIn(".git_scripts/ensure_shared_venv.sh", task_paths)
+        self.assertIn(".git_scripts/ensure_shared_venv.sh", transit_paths)
         self.assertIn("src/main/python/agent_task/tooling/service/public_work_register_service.py", task_paths)
         self.assertIn("src/main/python/agent_transit_station/tooling/service/public_work_register_service.py", transit_paths)
 
@@ -312,6 +314,7 @@ class WorkflowReleaseTest(unittest.TestCase):
             self.assertIn(str(legacy_file.resolve()), summary["removed_legacy_paths"])
             self.assertFalse(legacy_file.exists())
             self.assertTrue((repo_root / ".git_scripts" / "new_branch.sh").is_file())
+            self.assertTrue((repo_root / ".git_scripts" / "ensure_shared_venv.sh").is_file())
             self.assertTrue(
                 (
                     repo_root
@@ -357,7 +360,8 @@ class WorkflowReleaseTest(unittest.TestCase):
             exclude_text = exclude_path.read_text(encoding="utf-8")
             self.assertNotIn(".githooks/", exclude_text)
             self.assertNotIn(".git_scripts/", exclude_text)
-            self.assertNotIn("# workflow-kit managed excludes start", exclude_text)
+            self.assertIn("# workflow-kit managed excludes start", exclude_text)
+            self.assertIn("/.venv", exclude_text)
             self.assertIn("# keep-me", exclude_text)
             self.assertIn("# keep-me-too", exclude_text)
             hooks_path = subprocess.run(
@@ -405,6 +409,89 @@ class WorkflowReleaseTest(unittest.TestCase):
             ).read_text(encoding="utf-8")
             self.assertIn("{{ python_package_name }}", register_sync_template)
             self.assertNotIn("agent_workflow_kit.tooling.service", register_sync_template)
+
+    def test_ensure_shared_venv_links_primary_virtualenv_into_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            repo_root = temp_root / "TempRepo"
+            repo_root.mkdir(parents=True)
+            subprocess.run(["git", "init", str(repo_root)], check=True, capture_output=True, text=True)
+            subprocess.run(
+                ["git", "-C", str(repo_root), "config", "user.name", "Workflow Test"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo_root), "config", "user.email", "workflow@example.com"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            (repo_root / "README.md").write_text("# Temp Repo\n", encoding="utf-8")
+            (repo_root / ".git_scripts").mkdir(parents=True, exist_ok=True)
+            helper_path = repo_root / ".git_scripts" / "ensure_shared_venv.sh"
+            helper_path.write_text(
+                (self.workflow_root / ".git_scripts" / "ensure_shared_venv.sh").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            helper_path.chmod(0o755)
+            subprocess.run(
+                ["git", "-C", str(repo_root), "add", "README.md", ".git_scripts/ensure_shared_venv.sh"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo_root), "commit", "--no-verify", "-m", "init"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            primary_python = repo_root / ".venv" / "bin" / "python"
+            primary_python.parent.mkdir(parents=True, exist_ok=True)
+            primary_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            primary_python.chmod(0o755)
+
+            worktree_root = temp_root / "TempRepo-wt-link"
+            subprocess.run(
+                ["git", "-C", str(repo_root), "worktree", "add", "-b", "codex/link-test", str(worktree_root), "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            subprocess.run(
+                [str(helper_path), "--target-root", str(worktree_root)],
+                check=True,
+                capture_output=True,
+                text=True,
+                env={"WORKFLOW_GUARD_ACTIVE": "1", **os.environ},
+            )
+
+            worktree_venv = worktree_root / ".venv"
+            self.assertTrue(worktree_venv.is_symlink())
+            linked_target = Path(os.readlink(worktree_venv)).resolve()
+            self.assertEqual((repo_root / ".venv").resolve(), linked_target)
+            status_output = subprocess.run(
+                ["git", "-C", str(worktree_root), "status", "--short"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            self.assertEqual("", status_output)
+            exclude_path = Path(
+                subprocess.run(
+                    ["git", "-C", str(worktree_root), "rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+            )
+            exclude_text = exclude_path.read_text(encoding="utf-8")
+            self.assertIn("# workflow-kit managed excludes start", exclude_text)
+            self.assertIn("/.venv", exclude_text)
 
     def test_check_release_detects_outdated_then_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -679,6 +766,83 @@ exit 42
             remote_heads = self.git(repo_root, "ls-remote", "--heads", "origin").stdout
             self.assertIn("refs/heads/main", remote_heads)
             self.assertNotIn("refs/heads/codex/workflow-release-1-0-1", remote_heads)
+
+    def test_submit_release_to_repo_via_worktree_commit_bootstraps_older_shared_venv_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            self.publish_temp_release(workflow_root, "1.0.1")
+
+            primary_python = repo_root / ".venv" / "bin" / "python"
+            primary_python.parent.mkdir(parents=True, exist_ok=True)
+            primary_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            primary_python.chmod(0o755)
+
+            legacy_helper = repo_root / ".git_scripts" / "ensure_shared_venv.sh"
+            legacy_helper.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${SKIP_SHARED_VENV_LINK:-0}" == "1" ]]; then
+  exit 0
+fi
+
+target_root=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --target-root)
+      target_root="$2"
+      shift 2
+      ;;
+    --replace-existing|--quiet)
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+target_base="${target_root:-$(pwd)}"
+root="$(git -C "$target_base" rev-parse --show-toplevel)"
+common_git_dir="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)"
+primary_root="$(cd "$common_git_dir/.." && pwd)"
+if [[ "$root" == "$primary_root" ]]; then
+  exit 0
+fi
+
+if [[ -e "$primary_root/.venv" || -L "$primary_root/.venv" ]]; then
+  ln -snf "$primary_root/.venv" "$root/.venv"
+fi
+""",
+                encoding="utf-8",
+            )
+            legacy_helper.chmod(0o755)
+            (repo_root / ".gitignore").write_text("__pycache__/\n*.py[cod]\n", encoding="utf-8")
+            self.git(repo_root, "add", ".git_scripts/ensure_shared_venv.sh")
+            self.git(repo_root, "add", ".gitignore")
+            self.git(repo_root, "commit", "--no-verify", "-m", "use legacy shared venv helper")
+            self.git(repo_root, "push", "--no-verify", "origin", "main")
+
+            summary = submit_release_to_repo_via_worktree_commit(
+                workflow_root=workflow_root,
+                repo_root=repo_root,
+                repo_id="TempRepo",
+            )
+
+            self.assertEqual("committed", summary["action"])
+            worktree_root = Path(str(summary["worktree_path"]))
+            self.assertTrue((worktree_root / ".venv").is_symlink())
+            status_output = self.git(worktree_root, "status", "--short").stdout.strip()
+            self.assertEqual("", status_output)
+            exclude_path = Path(
+                self.git(worktree_root, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude").stdout.strip()
+            )
+            self.assertIn("/.venv", exclude_path.read_text(encoding="utf-8"))
 
     def test_submit_release_to_repo_via_worktree_commit_supports_dirty_primary_repo(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
