@@ -45,7 +45,7 @@ This repository is the central source of truth for downstream managed workflow f
 - Templates under `templates/full_codex_flow/files/.workflow-kit/` and `templates/full_codex_flow/files/.githooks/` are generated artifacts, not the primary editing target.
 - Downstream `PublicWorkRegisterService` runtime files are also managed here via the profile template at `templates/full_codex_flow/files/src/main/python/public_work_register_service.py.tmpl`.
 - If you change `.workflow-kit/`, `.githooks/`, `profiles/`, `repos/`, or release tooling in `scripts/`, publish a new release before expecting downstream auto-apply to succeed.
-- Downstream apply removes legacy managed `.git_scripts/*` and managed workflow `scripts/*` wrappers; project-owned callers must target `.workflow-kit/*`.
+- Downstream apply removes legacy managed workflow entrypoints and managed workflow `scripts/*` wrappers; project-owned callers must target `.workflow-kit/*`.
 - 下游仓库中的受管 `.workflow-kit/` / `.githooks/` 默认应保持纳入版本控制，中央 apply 不再把它们写入 `.git/info/exclude`。
 - 下游仓库的项目级 `.venv` 仍应保持本地运行时，不纳入版本控制；受管脚本负责在 worktree 中自动补共享 `.venv` 软链接，并同步维护 worktree 级 `.git/info/exclude`，避免新 worktree 在自动 sync 前被误判为 dirty。
 - 默认分支探测以仓库 manifest 中声明的 `default_branch` 为准；只要该分支已存在，本地脚本不应因为陈旧的 `origin/HEAD` 继续回退到旧默认分支。
@@ -127,12 +127,12 @@ Additional rules (enforced by the guard script):
 ## Managed Workflow Contract
 
 - Profile: `full_codex_flow`
-- Workflow version: `1.0.15`
+- Workflow version: `1.0.16`
 - Workflow source metadata: `.workflow-kit/source.json`
 - Canonical managed runtime entrypoints live under `.workflow-kit/`.
 - Before substantive work, run the repository workflow guard entrypoint: `./.workflow-kit/assert_workspace.sh`.
 - Managed git hooks live under `.githooks/`; keep `core.hooksPath=.githooks`.
-- Legacy managed `.git_scripts/*` and workflow `scripts/*` wrappers are removed during release apply; project-owned callers should invoke `.workflow-kit/*` directly.
+- Legacy managed workflow entrypoints and workflow `scripts/*` wrappers are removed during release apply; project-owned callers should invoke `.workflow-kit/*` directly.
 - Code edits belong on `codex/*` managed worktrees rather than the default-branch primary checkout.
 - Commit messages use `[<exec_id>] <type>(<scope>): <summary>`; if this repository enables auto-push/auto-release hooks, `git commit` may trigger them.
 - Do not manually edit managed workflow files in this repository.
