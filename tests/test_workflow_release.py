@@ -146,6 +146,18 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.git(repo_root, "push", "--no-verify", "-u", "origin", default_branch)
         return repo_config
 
+    def create_managed_worktree(
+        self,
+        repo_root: Path,
+        *,
+        branch_name: str,
+        worktree_suffix: str,
+        start_point: str = "main",
+    ) -> Path:
+        worktree_root = repo_root.parent / f"{repo_root.name}-wt-{worktree_suffix}"
+        self.git(repo_root, "worktree", "add", "-b", branch_name, str(worktree_root), start_point)
+        return worktree_root
+
     def publish_release_for_repo_ids(
         self,
         workflow_root: Path,
@@ -248,6 +260,8 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.assertIn(".workflow-kit/new_exec.sh", transit_paths)
         self.assertIn(".workflow-kit/ensure_shared_venv.sh", task_paths)
         self.assertIn(".workflow-kit/ensure_shared_venv.sh", transit_paths)
+        self.assertIn(".workflow-kit/prepare_commit.sh", task_paths)
+        self.assertIn(".workflow-kit/prepare_commit.sh", transit_paths)
         self.assertIn("src/main/python/agent_task/tooling/service/public_work_register_service.py", task_paths)
         self.assertIn("src/main/python/agent_transit_station/tooling/service/public_work_register_service.py", transit_paths)
 
@@ -333,6 +347,7 @@ exec "$ROOT/.workflow-kit/new_branch.sh" "$@"
             self.assertTrue(project_script.exists())
             self.assertTrue((repo_root / ".workflow-kit" / "new_branch.sh").is_file())
             self.assertTrue((repo_root / ".workflow-kit" / "ensure_shared_venv.sh").is_file())
+            self.assertTrue((repo_root / ".workflow-kit" / "prepare_commit.sh").is_file())
             self.assertTrue(
                 (
                     repo_root
@@ -427,6 +442,12 @@ exec "$ROOT/.workflow-kit/new_branch.sh" "$@"
             ).read_text(encoding="utf-8")
             self.assertIn("{{ python_package_name }}", register_sync_template)
             self.assertNotIn("agent_workflow_kit.tooling.service", register_sync_template)
+
+            prepare_commit_template = (
+                workflow_root / "templates" / "full_codex_flow" / "files" / ".workflow-kit" / "prepare_commit.sh.tmpl"
+            ).read_text(encoding="utf-8")
+            self.assertIn("git add -A", prepare_commit_template)
+            self.assertIn('"ready"', prepare_commit_template)
 
     def test_apply_release_brushes_legacy_agents_workflow_sections(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -796,6 +817,164 @@ exit 42
             self.assertEqual("1.0.1", install["workflow_version"])
             entry_runs = (repo_root / "entry.log").read_text(encoding="utf-8").splitlines()
             self.assertEqual(["1.0.0", "1.0.1"], entry_runs)
+
+    def test_prepare_commit_reports_commit_readiness_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+
+            readme_path = repo_root / "README.md"
+            readme_path.write_text(readme_path.read_text(encoding="utf-8") + "staged\n", encoding="utf-8")
+            self.git(repo_root, "add", "README.md")
+
+            agents_path = repo_root / "AGENTS.md"
+            agents_path.write_text(agents_path.read_text(encoding="utf-8") + "unstaged\n", encoding="utf-8")
+
+            untracked_path = repo_root / "NOTES.tmp"
+            untracked_path.write_text("scratch\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [str(repo_root / ".workflow-kit" / "prepare_commit.sh"), "--json"],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(2, result.returncode)
+            payload = json.loads(result.stdout)
+            self.assertFalse(payload["ready"])
+            self.assertEqual("none", payload["action_taken"])
+            self.assertIn("README.md", payload["staged_tracked"])
+            self.assertIn("AGENTS.md", payload["unstaged_tracked"])
+            self.assertIn("NOTES.tmp", payload["untracked"])
+            self.assertEqual(1, payload["staged_count"])
+            self.assertEqual(1, payload["unstaged_count"])
+            self.assertEqual(1, payload["untracked_count"])
+
+    def test_prepare_commit_stage_closes_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+
+            readme_path = repo_root / "README.md"
+            readme_path.write_text(readme_path.read_text(encoding="utf-8") + "tracked\n", encoding="utf-8")
+            notes_path = repo_root / "NOTES.tmp"
+            notes_path.write_text("scratch\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [str(repo_root / ".workflow-kit" / "prepare_commit.sh"), "--stage", "--json"],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode)
+            payload = json.loads(result.stdout)
+            self.assertTrue(payload["ready"])
+            self.assertEqual("staged_all", payload["action_taken"])
+            self.assertEqual(0, payload["unstaged_count"])
+            self.assertEqual(0, payload["untracked_count"])
+            status_lines = self.git(repo_root, "status", "--short").stdout.splitlines()
+            self.assertTrue(status_lines)
+            self.assertTrue(all(not line.startswith("??") for line in status_lines))
+
+    def test_pre_commit_blocks_unstaged_until_prepare_commit_stages_all(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/prepare-guard-test",
+                worktree_suffix="prepare-guard-test",
+            )
+
+            readme_path = worktree_root / "README.md"
+            readme_path.write_text(readme_path.read_text(encoding="utf-8") + "tracked\n", encoding="utf-8")
+            (worktree_root / "NOTES.tmp").write_text("scratch\n", encoding="utf-8")
+
+            blocked = subprocess.run(
+                [str(worktree_root / ".githooks" / "pre-commit")],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(1, blocked.returncode)
+            self.assertIn("./.workflow-kit/prepare_commit.sh", blocked.stderr)
+            self.assertIn("./.workflow-kit/prepare_commit.sh --stage", blocked.stderr)
+
+            staged = subprocess.run(
+                [str(worktree_root / ".workflow-kit" / "prepare_commit.sh"), "--stage"],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, staged.returncode)
+
+            allowed = subprocess.run(
+                [str(worktree_root / ".githooks" / "pre-commit")],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, allowed.returncode)
+
+    def test_pre_commit_skip_prepare_guard_only_skips_readiness_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/prepare-guard-skip",
+                worktree_suffix="prepare-guard-skip",
+            )
+
+            readme_path = worktree_root / "README.md"
+            readme_path.write_text(readme_path.read_text(encoding="utf-8") + "tracked\n", encoding="utf-8")
+            (worktree_root / "NOTES.tmp").write_text("scratch\n", encoding="utf-8")
+
+            bypassed = subprocess.run(
+                [str(worktree_root / ".githooks" / "pre-commit")],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env={"SKIP_PREPARE_COMMIT_GUARD": "1", **os.environ},
+            )
+            self.assertEqual(0, bypassed.returncode)
+
+            blocked_elsewhere = subprocess.run(
+                [str(repo_root / ".githooks" / "pre-commit")],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env={"SKIP_PREPARE_COMMIT_GUARD": "1", **os.environ},
+            )
+            self.assertNotEqual(0, blocked_elsewhere.returncode)
+            self.assertIn("Code edits are only allowed", blocked_elsewhere.stderr)
 
     def test_submit_release_to_repo_via_worktree_commit_skips_current_repo(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

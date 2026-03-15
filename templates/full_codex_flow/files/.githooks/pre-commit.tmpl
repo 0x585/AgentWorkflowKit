@@ -18,6 +18,7 @@ ASSERT_PURPOSE=code "$ROOT/.workflow-kit/assert_workspace.sh"
 if [[ -x "$ROOT/scripts/python_bin.sh" ]]; then
   export PYTHON_BIN="${PYTHON_BIN:-$("$ROOT/scripts/python_bin.sh")}"
 fi
+export PYTHONDONTWRITEBYTECODE=1
 
 branch="$(git branch --show-current)"
 if [[ "$branch" == "$DEFAULT_BRANCH" ]]; then
@@ -38,6 +39,25 @@ fi
 
 if [[ -x "$ROOT/.workflow-kit/public_work_register_sync.py" ]]; then
   "$ROOT/.workflow-kit/public_work_register_sync.py"
+fi
+
+if [[ "${SKIP_PREPARE_COMMIT_GUARD:-0}" != "1" ]]; then
+  set +e
+  prepare_output="$("$ROOT/.workflow-kit/prepare_commit.sh")"
+  prepare_exit=$?
+  set -e
+  if [[ "$prepare_exit" -eq 2 ]]; then
+    printf '%s\n' "$prepare_output" >&2
+    echo "[pre-commit] Commit blocked: unstaged or untracked changes remain." >&2
+    echo "[pre-commit] Run: ./.workflow-kit/prepare_commit.sh" >&2
+    echo "[pre-commit] Or stage all changes: ./.workflow-kit/prepare_commit.sh --stage" >&2
+    echo "[pre-commit] Special-case bypass only: SKIP_PREPARE_COMMIT_GUARD=1 git commit ..." >&2
+    exit 1
+  fi
+  if [[ "$prepare_exit" -ne 0 ]]; then
+    echo "[pre-commit] Failed to evaluate commit readiness." >&2
+    exit "$prepare_exit"
+  fi
 fi
 
 if [[ -x "$ROOT/.workflow-kit/session_sync_status.sh" ]]; then

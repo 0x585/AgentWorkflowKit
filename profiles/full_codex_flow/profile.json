@@ -55,6 +55,12 @@
     },
     {
       "type": "file",
+      "output": ".workflow-kit/prepare_commit.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/prepare_commit.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
       "output": ".workflow-kit/setup_githooks.sh",
       "template": "templates/full_codex_flow/files/.workflow-kit/setup_githooks.sh.tmpl",
       "executable": true

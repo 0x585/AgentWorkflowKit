@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# Managed by AgentWorkflowKit
+# Workflow-Version: 1.0.17
+# Do not edit in this repository.
+# Source profile/file id: .workflow-kit/prepare_commit.sh
+
+__workflow_guard_root="$(git rev-parse --show-toplevel 2>/dev/null || { cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd; })"
+if [[ "${WORKFLOW_GUARD_ACTIVE:-0}" != "1" ]]; then
+  exec "$__workflow_guard_root/.workflow-kit/workflow_guard.sh" "$0" "$@"
+fi
+unset __workflow_guard_root
+
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  ./.workflow-kit/prepare_commit.sh [--stage] [--json]
+
+Options:
+  --stage    Run git add -A before the final check.
+  --json     Emit machine-friendly JSON instead of text.
+  -h, --help Show this help.
+USAGE
+}
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+STAGE_ALL=0
+JSON_OUTPUT=0
+ACTION_TAKEN="none"
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --stage)
+      STAGE_ALL=1
+      shift
+      ;;
+    --json)
+      JSON_OUTPUT=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "[prepare-commit] Unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "$STAGE_ALL" -eq 1 ]]; then
+  git add -A
+  ACTION_TAKEN="staged_all"
+fi
+
+declare -a STAGED_TRACKED=()
+declare -a UNSTAGED_TRACKED=()
+declare -a UNTRACKED=()
+
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  status="${line:0:2}"
+  path="${line:3}"
+  if [[ "$status" == "??" ]]; then
+    UNTRACKED+=("$path")
+    continue
+  fi
+  if [[ "${status:0:1}" != " " ]]; then
+    STAGED_TRACKED+=("$path")
+  fi
+  if [[ "${status:1:1}" != " " ]]; then
+    UNSTAGED_TRACKED+=("$path")
+  fi
+done < <(git status --porcelain=v1 --untracked-files=all)
+
+READY=1
+if [[ "${#UNSTAGED_TRACKED[@]}" -gt 0 || "${#UNTRACKED[@]}" -gt 0 ]]; then
+  READY=0
+fi
+
+print_section() {
+  local title="$1"
+  shift
+  local -a items=("$@")
+  echo "[prepare-commit] ${title}: ${#items[@]}"
+  if [[ "${#items[@]}" -eq 0 ]]; then
+    return
+  fi
+  local item=""
+  for item in "${items[@]}"; do
+    echo "  - ${item}"
+  done
+}
+
+if [[ "$JSON_OUTPUT" -eq 1 ]]; then
+  json_args=("$READY" "$ACTION_TAKEN" "__WF_STAGE__")
+  if [[ "${#STAGED_TRACKED[@]}" -gt 0 ]]; then
+    json_args+=("${STAGED_TRACKED[@]}")
+  fi
+  json_args+=("__WF_UNSTAGE__")
+  if [[ "${#UNSTAGED_TRACKED[@]}" -gt 0 ]]; then
+    json_args+=("${UNSTAGED_TRACKED[@]}")
+  fi
+  json_args+=("__WF_UNTRACKED__")
+  if [[ "${#UNTRACKED[@]}" -gt 0 ]]; then
+    json_args+=("${UNTRACKED[@]}")
+  fi
+  python3 - "${json_args[@]}" <<'PY'
+import json
+import sys
+
+ready = sys.argv[1] == "1"
+action_taken = sys.argv[2]
+
+sentinels = {
+    "__WF_STAGE__": "staged_tracked",
+    "__WF_UNSTAGE__": "unstaged_tracked",
+    "__WF_UNTRACKED__": "untracked",
+}
+payload = {value: [] for value in sentinels.values()}
+current_key = None
+for item in sys.argv[3:]:
+    if item in sentinels:
+        current_key = sentinels[item]
+        continue
+    if current_key is None:
+        raise SystemExit(1)
+    payload[current_key].append(item)
+
+payload.update(
+    {
+        "ready": ready,
+        "action_taken": action_taken,
+        "staged_count": len(payload["staged_tracked"]),
+        "unstaged_count": len(payload["unstaged_tracked"]),
+        "untracked_count": len(payload["untracked"]),
+    }
+)
+print(json.dumps(payload, ensure_ascii=False, indent=2))
+PY
+else
+  if [[ "$READY" -eq 1 ]]; then
+    echo "[prepare-commit] Commit-ready: yes"
+  else
+    echo "[prepare-commit] Commit-ready: no"
+  fi
+  echo "[prepare-commit] Action taken: ${ACTION_TAKEN}"
+  if [[ "${#STAGED_TRACKED[@]}" -gt 0 ]]; then
+    print_section "Staged tracked changes" "${STAGED_TRACKED[@]}"
+  else
+    print_section "Staged tracked changes"
+  fi
+  if [[ "${#UNSTAGED_TRACKED[@]}" -gt 0 ]]; then
+    print_section "Unstaged tracked changes" "${UNSTAGED_TRACKED[@]}"
+  else
+    print_section "Unstaged tracked changes"
+  fi
+  if [[ "${#UNTRACKED[@]}" -gt 0 ]]; then
+    print_section "Untracked files" "${UNTRACKED[@]}"
+  else
+    print_section "Untracked files"
+  fi
+fi
+
+if [[ "$READY" -eq 1 ]]; then
+  exit 0
+fi
+exit 2

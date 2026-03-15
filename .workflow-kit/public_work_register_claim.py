@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Managed by AgentWorkflowKit
-# Workflow-Version: 1.0.16
+# Workflow-Version: 1.0.17
 # Do not edit in this repository.
 # Source profile/file id: .workflow-kit/public_work_register_claim.py
 from __future__ import annotations

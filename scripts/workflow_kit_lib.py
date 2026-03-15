@@ -19,6 +19,7 @@ LEGACY_SCRIPT_WRAPPER_DIR = "scripts"
 MANAGED_RUNTIME_BASENAMES = (
     "workflow_guard.sh",
     "assert_workspace.sh",
+    "prepare_commit.sh",
     "setup_githooks.sh",
     "git_default_branch.sh",
     "new_branch.sh",
@@ -1122,6 +1123,7 @@ def submit_release_to_repo_via_worktree_commit(
             "WORKFLOW_GUARD_ACTIVE": "1",
             "SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT": "1",
             "SKIP_AUTO_PUSH_AFTER_COMMIT": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
         }
         _run_command(["git", "-C", str(worktree_root), "add", "-A"], env=commit_env)
         _run_command(["git", "-C", str(worktree_root), "commit", "-m", commit_message], env=commit_env)
