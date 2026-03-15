@@ -85,6 +85,23 @@
 
 因为模板会在发布时自动从源码重新导出。
 
+### 4.1.1 提交前收口命令
+
+当前 workflow 不提供也不假设存在一个 Git `git add` hook；Codex 当前也没有可直接依赖的原生“模型结束前先执行本地阻断 hook”能力。
+
+因此，这套 workflow 采用仓库内收口方案：
+
+- 检查当前提交是否已经收口：`./.workflow-kit/prepare_commit.sh`
+- 明确把当前所有变更纳入本次提交：`./.workflow-kit/prepare_commit.sh --stage`
+- 如果要给 agent 或脚本消费稳定输出：`./.workflow-kit/prepare_commit.sh --json`
+
+规则：
+
+- 默认模式只检查，不会自动 stage。
+- `--stage` 明确执行 `git add -A`，然后重新检查。
+- 只要还有 unstaged tracked changes 或 untracked files，`.githooks/pre-commit` 就会阻断提交。
+- 特殊场景下可以用 `SKIP_PREPARE_COMMIT_GUARD=1 git commit ...` 临时绕过这层收口检查，但它不会绕过已有的 branch/workspace 守卫。
+
 ### 4.2 导出模板
 
 如果你只是想先本地查看模板导出结果，可以执行：
