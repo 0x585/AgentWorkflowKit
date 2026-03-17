@@ -16,22 +16,6 @@ ROOT="$(git rev-parse --show-toplevel)"
 DEFAULT_BRANCH="$("$ROOT/.workflow-kit/git_default_branch.sh" "$ROOT")"
 CURRENT_BRANCH="$(git branch --show-current || true)"
 
-if [[ -f "$ROOT/scripts/apply_downstreams.py" ]]; then
-  if [[ "${SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT:-0}" == "1" ]]; then
-    echo "[post-commit] Downstream apply skipped by SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT=1"
-  else
-    python_bin="${PYTHON_BIN:-$(command -v python3 || true)}"
-    if [[ -n "$python_bin" && -x "$python_bin" ]]; then
-      echo "[post-commit] Applying managed workflow to downstream repositories..."
-      if ! "$python_bin" "$ROOT/scripts/apply_downstreams.py"; then
-        echo "[post-commit] Warning: downstream apply failed. Run python3 scripts/apply_downstreams.py manually." >&2
-      fi
-    else
-      echo "[post-commit] Warning: python3 not found, skip downstream apply." >&2
-    fi
-  fi
-fi
-
 if [[ -z "$CURRENT_BRANCH" ]]; then
   exit 0
 fi

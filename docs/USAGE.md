@@ -102,6 +102,25 @@
 - 只要还有 unstaged tracked changes 或 untracked files，`.githooks/pre-commit` 就会阻断提交。
 - 特殊场景下可以用 `SKIP_PREPARE_COMMIT_GUARD=1 git commit ...` 临时绕过这层收口检查，但它不会绕过已有的 branch/workspace 守卫。
 
+### 4.1.2 代码任务的提交顺序
+
+代码修改后的默认顺序固定为：
+
+1. 执行测试
+2. 完成审查
+3. 运行 `./.workflow-kit/prepare_commit.sh`
+4. `git commit`
+5. `git push` / auto-release
+6. `python3 scripts/apply_downstreams.py`
+
+具体要求：
+
+- `docs/exec_records/<exec_id>.md` 现在必须记录代码任务的 `验证结果` 和 `审查结果`
+- `commit-msg` 会在代码提交时校验对应 exec record；未完成 `验证结果` / `审查结果` 的代码提交会被阻断
+- docs-only 提交仍然需要 exec record，但不会被这条“测试 / 审查”校验阻断
+- `prepare_commit.sh` 只负责收口，不替代测试或审查记录
+- `post-commit` 只负责自动 push 当前 `codex/*` 分支；downstream apply 改为在 auto-release 成功 push 默认分支后执行
+
 ### 4.2 导出模板
 
 如果你只是想先本地查看模板导出结果，可以执行：
@@ -177,15 +196,21 @@ python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/AgentTask 
 
 ## 5. 中央仓库提交后的自动行为
 
-中央仓库自己的 `.githooks/post-commit` 会在提交后尝试执行：
+中央仓库代码任务的默认自动顺序现在是：
 
 ```bash
+git commit
+git push
+./.workflow-kit/session_push_autorelease.sh
 python3 scripts/apply_downstreams.py
 ```
 
 这表示：
 
-- 只要当前 release 工件是最新的，中央仓库提交后会自动为需要更新的下游仓库创建本地 worktree 提交
+- `.githooks/post-commit` 在 `codex/*` 分支上只负责自动执行 `git push`
+- `.githooks/pre-push` 会接管这个 push，调用 `./.workflow-kit/session_push_autorelease.sh`
+- `session_push_autorelease.sh` 会先完成 merge / push 默认分支，再调用 `python3 scripts/apply_downstreams.py`
+- 只要当前 release 工件是最新的，中央仓库 auto-release 成功后会自动为需要更新的下游仓库创建本地 worktree 提交
 - 如果你只是修改了源码但还没有发布新的 release，这个自动动作会拒绝执行，并提示先发布
 - 下游仓库的提交不会在这里自动 push；后续是否 push/release 由对应子仓库自行处理
 

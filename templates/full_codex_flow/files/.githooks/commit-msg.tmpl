@@ -32,6 +32,12 @@ if [[ ! "$first_line" =~ $pattern ]]; then
 fi
 
 ROOT="$(git rev-parse --show-toplevel)"
+DEFAULT_BRANCH="$("$ROOT/.workflow-kit/git_default_branch.sh" "$ROOT")"
+if [[ -x "$ROOT/scripts/python_bin.sh" ]]; then
+  PYTHON_BIN="${PYTHON_BIN:-$("$ROOT/scripts/python_bin.sh")}"
+else
+  PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || true)}"
+fi
 exec_id="$(printf '%s' "$first_line" | sed -nE 's/^\[([0-9]{4,})\].*/\1/p')"
 if [[ -n "$exec_id" ]]; then
   record_file="$ROOT/docs/exec_records/${exec_id}.md"
@@ -50,4 +56,31 @@ if [[ -n "$exec_id" ]]; then
     echo "Allocate a new one: ./.workflow-kit/new_exec.sh" >&2
     exit 1
   fi
+
+  if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
+    echo "Python runtime not available for commit flow checks." >&2
+    exit 1
+  fi
+
+  staged_paths=()
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    staged_paths+=("$path")
+  done < <(git diff --cached --name-only --diff-filter=ACMR)
+
+  validate_cmd=(
+    "$PYTHON_BIN"
+    "$ROOT/.workflow-kit/exec_record_hygiene.py"
+    --repo-root
+    "$ROOT"
+    --target-branch
+    "$DEFAULT_BRANCH"
+    --check-commit-flow
+    --exec-id
+    "$exec_id"
+  )
+  for path in "${staged_paths[@]}"; do
+    validate_cmd+=(--path "$path")
+  done
+  "${validate_cmd[@]}"
 fi
