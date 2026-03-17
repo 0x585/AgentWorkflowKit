@@ -2,6 +2,7 @@
 
 | ID | Date | Summary |
 |---|---|---|
+| 1018 | 2026-03-17 | feat(workflow): enforce test-review-release order |
 | 1016 | 2026-03-15 | TODO |
 | 1015 | 2026-03-13 | TODO |
 | 1014 | 2026-03-13 | TODO |

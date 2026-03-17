@@ -202,8 +202,9 @@ cat <<EOF2 > "$record_file"
 ## 完成定义（DoD）
 
 - [ ] 需求目标已明确（含“是否必须 merge 到 ${TARGET_BRANCH} 并删除分支”）
-- [ ] 变更验证命令已执行并记录
-- [ ] 若为代码任务：已合并到目标分支并完成分支清理
+- [ ] 若有代码修改：已执行测试并记录结果
+- [ ] 若有代码修改：已完成变更审查并记录结论
+- [ ] 若为代码任务：已 push / auto-release，并完成下游应用
 
 ## 需求摘要
 
@@ -218,6 +219,10 @@ TODO
 - TODO
 
 ## 验证结果
+
+- TODO
+
+## 审查结果
 
 - TODO
 
@@ -241,6 +246,9 @@ cat <<EOF2 > "$commit_template_file"
 # - TODO
 
 # Tests
+# - TODO
+
+# Review
 # - TODO
 
 # Risks

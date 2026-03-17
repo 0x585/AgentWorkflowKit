@@ -1,0 +1,18 @@
+[1018] feat(workflow): enforce test-review-release order
+
+# Changes
+# - gate code commits on completed test/review notes in exec records
+# - move downstream apply to run after auto-release
+# - publish full_codex_flow@1.0.18
+
+# Tests
+# - python3 -m unittest tests.test_workflow_release
+# - python3 -m py_compile .workflow-kit/exec_record_hygiene.py tests/test_workflow_release.py scripts/workflow_kit_lib.py
+# - bash -n .githooks/commit-msg .githooks/post-commit .workflow-kit/new_exec.sh .workflow-kit/session_push_autorelease.sh
+
+# Review
+# - verified commit-msg guard uses exec_id from commit subject
+# - verified downstream apply runs after merge/push and before source worktree cleanup
+
+# Risks
+# - downstream automation that expects hooks may need --no-verify when generating local child-repo commits

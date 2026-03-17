@@ -140,6 +140,25 @@ cleanup_source_worktree() {
   fi
 }
 
+apply_downstreams_after_release() {
+  if [[ ! -f "$PRIMARY_ROOT/scripts/apply_downstreams.py" ]]; then
+    return 0
+  fi
+  if [[ "${SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT:-0}" == "1" ]]; then
+    echo "[session-push-autorelease] Downstream apply skipped by SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT=1"
+    return 0
+  fi
+  python_bin="${PYTHON_BIN:-$(command -v python3 || true)}"
+  if [[ -z "$python_bin" || ! -x "$python_bin" ]]; then
+    echo "[session-push-autorelease] Warning: python3 not found, skip downstream apply." >&2
+    return 0
+  fi
+  echo "[session-push-autorelease] Applying managed workflow to downstream repositories..."
+  if ! "$python_bin" "$PRIMARY_ROOT/scripts/apply_downstreams.py"; then
+    echo "[session-push-autorelease] Warning: downstream apply failed. Run python3 scripts/apply_downstreams.py manually." >&2
+  fi
+}
+
 echo "[session-push-autorelease] Pushing source branch: ${SOURCE_BRANCH}"
 git push --no-verify -u origin "$SOURCE_BRANCH"
 
@@ -151,6 +170,7 @@ MAIN_BASE_SHA="$(git -C "$PRIMARY_ROOT" rev-parse HEAD)"
 echo "[session-push-autorelease] Merging ${SOURCE_BRANCH} -> ${TARGET_BRANCH}"
 if git -C "$PRIMARY_ROOT" merge --no-ff "$SOURCE_BRANCH"; then
   git -C "$PRIMARY_ROOT" push --no-verify origin "$TARGET_BRANCH"
+  apply_downstreams_after_release
   git -C "$PRIMARY_ROOT" push --no-verify origin --delete "$SOURCE_BRANCH" || true
 
   cleanup_source_worktree

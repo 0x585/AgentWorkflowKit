@@ -59,9 +59,11 @@ python3 scripts/publish_release.py --profile full_codex_flow --version <new-vers
 
 - `PublicWorkRegister` directory selection must stay bound to the canonical project directory, not a worktree-specific folder name.
 
-- `.githooks/post-commit` runs `python3 scripts/apply_downstreams.py`.
 - `scripts/apply_downstreams.py` refuses to run when current release artifacts are stale relative to the source repo.
 - `scripts/apply_downstreams.py` now creates downstream local commits in child-repo worktrees; it does not push or auto-release those downstream commits.
+- 中央仓库的 downstream apply 顺序固定为：`测试 -> 审查 -> commit -> push/auto-release -> apply_downstreams.py`。
+- `commit-msg` 会在代码提交时校验 exec record；若 `docs/exec_records/<exec_id>.md` 未完成 `验证结果` / `审查结果`，提交会被阻断。
+- `session_push_autorelease.sh` 会在 `<default-branch>` push 成功后再执行 `python3 scripts/apply_downstreams.py`，避免在 auto-release 前提早 fan-out。
 - 为兼容旧版下游 runtime，中央 downstream apply 在调用子仓 `new_worktree.sh` 时会临时设置 `SKIP_SHARED_VENV_LINK=1`；待当前 release 应用完成后，再由新 runtime 补做共享 `.venv` 修复。
 - 下游 `AGENTS.md` 中散落的通用 workflow 章节会在 apply 时刷洗并收束到固定 managed block；块外应只保留仓库特有规则。
 - Therefore, “changed workflow source but did not publish release yet” is an invalid handoff state for downstream sync.
@@ -72,19 +74,23 @@ python3 scripts/publish_release.py --profile full_codex_flow --version <new-vers
 After finishing code changes on `codex/*`, run:
 
 ```bash
+<tests>
+<review>
 ./.workflow-kit/prepare_commit.sh
 git commit -m "[<exec_id>] <type>(<scope>): <summary>"
 ```
 
+- 代码修改后的默认顺序固定为：测试 -> 审查 -> `./.workflow-kit/prepare_commit.sh` -> `git commit` -> `git push` / auto-release -> downstream apply。
+- `docs/exec_records/<exec_id>.md` 必须先记录测试结果与审查结论，再提交代码；`commit-msg` 会据此阻断未完成的代码提交。
 - 如果 `prepare_commit.sh` 报告存在未收口变更，先处理后再提交；确认本次要全量纳入提交时，使用 `./.workflow-kit/prepare_commit.sh --stage`。
-- `.githooks/post-commit` first attempts downstream apply via `python3 scripts/apply_downstreams.py`.
-- `.githooks/post-commit` then auto-runs `git push` for `codex/*` branches by default.
+- `.githooks/post-commit` auto-runs `git push` for `codex/*` branches by default。
 - Downstream apply creates local child-repo commits only; any resulting downstream worktree still requires later push/release handling in that child repo.
 - `.githooks/pre-commit` now blocks commits when unstaged tracked changes or untracked files remain; use `SKIP_PREPARE_COMMIT_GUARD=1 git commit ...` only for exceptional bypass cases.
 - `.githooks/pre-push` auto-triggers `./.workflow-kit/session_push_autorelease.sh` for `codex/*` pushes.
-- Flow: push `codex/*` -> merge into `<default-branch>` -> push `<default-branch>` -> delete remote/local source branch -> remove source worktree.
+- `session_push_autorelease.sh` merges into `<default-branch>`, pushes `<default-branch>`, then runs `python3 scripts/apply_downstreams.py`.
+- Flow: push `codex/*` -> merge into `<default-branch>` -> push `<default-branch>` -> apply downstreams -> delete remote/local source branch -> remove source worktree.
 - If auto-release reports `behind/diverged`, run `./.workflow-kit/session_sync.sh <default-branch>` first, then retry push/release.
-- If you need to commit without downstream auto-apply (special cases only), use `SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT=1 git commit ...`.
+- If you need to skip downstream auto-apply after release (special cases only), use `SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT=1 git commit ...`.
 - If you need to commit without auto push (special cases only), use `SKIP_AUTO_PUSH_AFTER_COMMIT=1 git commit ...`.
 - No second confirmation is required.
 - If merge conflicts occur, conflict context is kept and resumed via `./.workflow-kit/session_release_resume.sh`.
@@ -117,7 +123,7 @@ Additional rules (enforced by the guard script):
   - destructive action with irreversible impact
   - unresolved requirement ambiguity that blocks implementation
   - missing permission/environment prerequisite
-- `git commit` on `codex/*` is expected to trigger downstream apply, auto-push, then auto-release; original push may be intentionally canceled by hook after release succeeds.
+- `git commit` on `codex/*` is expected to trigger auto-push, auto-release, then downstream apply; original push may be intentionally canceled by hook after release succeeds.
 
 ## Disallowed States
 
@@ -134,11 +140,13 @@ Additional rules (enforced by the guard script):
 - Workflow source metadata: `.workflow-kit/source.json`
 - Canonical managed runtime entrypoints live under `.workflow-kit/`.
 - Before substantive work, run the repository workflow guard entrypoint: `./.workflow-kit/assert_workspace.sh`.
+- For code changes, complete and record `test -> review -> commit`; keep `docs/exec_records/<exec_id>.md` updated before committing.
 - Before `git commit`, run `./.workflow-kit/prepare_commit.sh`; if this commit should include every current change, use `./.workflow-kit/prepare_commit.sh --stage`.
 - Managed git hooks live under `.githooks/`; keep `core.hooksPath=.githooks`.
 - Legacy managed workflow entrypoints and workflow `scripts/*` wrappers are removed during release apply; project-owned callers should invoke `.workflow-kit/*` directly.
 - Code edits belong on `codex/*` managed worktrees rather than the default-branch primary checkout.
 - Commit messages use `[<exec_id>] <type>(<scope>): <summary>`; if this repository enables auto-push/auto-release hooks, `git commit` may trigger them.
+- Managed `commit-msg` blocks code commits until the exec record has completed `验证结果` and `审查结果`.
 - Managed `pre-commit` blocks commits when unstaged tracked changes or untracked files remain; `SKIP_PREPARE_COMMIT_GUARD=1` bypasses only this readiness check.
 - Do not manually edit managed workflow files in this repository.
 - Repo-specific differences must be implemented through the central manifest, not by local customization.

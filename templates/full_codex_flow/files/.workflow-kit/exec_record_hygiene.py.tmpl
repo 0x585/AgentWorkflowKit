@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import PurePosixPath
 import re
 import subprocess
 import sys
@@ -120,8 +121,9 @@ class ExecRecordHygieneService:
             f"# {exec_id}\n\n"
             "## 完成定义（DoD）\n\n"
             f"- [ ] 需求目标已明确（含“是否必须 merge 到 {target_branch} 并删除分支”）\n"
-            "- [ ] 变更验证命令已执行并记录\n"
-            "- [ ] 若为代码任务：已合并到目标分支并完成分支清理\n\n"
+            "- [ ] 若有代码修改：已执行测试并记录结果\n"
+            "- [ ] 若有代码修改：已完成变更审查并记录结论\n"
+            "- [ ] 若为代码任务：已 push / auto-release，并完成下游应用\n\n"
             "## 需求摘要\n\n"
             "TODO\n\n"
             "## 变更文件\n\n"
@@ -129,6 +131,8 @@ class ExecRecordHygieneService:
             "## 变更说明\n\n"
             "- TODO\n\n"
             "## 验证结果\n\n"
+            "- TODO\n\n"
+            "## 审查结果\n\n"
             "- TODO\n\n"
             "## 完成待办项\n\n"
             "- 无\n\n"
@@ -139,7 +143,75 @@ class ExecRecordHygieneService:
         )
 
     def _commit_template(self, exec_id: int) -> str:
-        return f"[{exec_id}] type(scope): summary\n\n# Changes\n# - TODO\n\n# Tests\n# - TODO\n\n# Risks\n# - TODO\n"
+        return (
+            f"[{exec_id}] type(scope): summary\n\n"
+            "# Changes\n# - TODO\n\n"
+            "# Tests\n# - TODO\n\n"
+            "# Review\n# - TODO\n\n"
+            "# Risks\n# - TODO\n"
+        )
+
+    def validate_commit_flow(self, repo_root: Path, exec_id: int, staged_paths: list[str]) -> dict[str, object]:
+        record_path = repo_root / "docs" / "exec_records" / f"{exec_id}.md"
+        requires_test_review = any(not self._is_doc_only_path(path) for path in staged_paths)
+        result: dict[str, object] = {
+            "exec_id": exec_id,
+            "record_path": str(record_path),
+            "staged_paths": staged_paths,
+            "requires_test_review": requires_test_review,
+            "missing_items": [],
+        }
+        if not requires_test_review:
+            return result
+
+        if not record_path.is_file():
+            result["missing_items"] = [f"Execution record missing: {record_path}"]
+            return result
+
+        text = record_path.read_text(encoding="utf-8")
+        missing_items: list[str] = []
+        required_checkboxes = (
+            "若有代码修改：已执行测试并记录结果",
+            "若有代码修改：已完成变更审查并记录结论",
+        )
+        for item in required_checkboxes:
+            pattern = re.compile(rf"^- \[x\] {re.escape(item)}\s*$", re.MULTILINE)
+            if pattern.search(text) is None:
+                missing_items.append(f"完成定义缺少勾选：{item}")
+
+        for section_title in ("验证结果", "审查结果"):
+            if not self._section_has_meaningful_content(text, section_title):
+                missing_items.append(f"章节未完成：## {section_title}")
+
+        result["missing_items"] = missing_items
+        return result
+
+    def _is_doc_only_path(self, path: str) -> bool:
+        normalized = PurePosixPath(path).as_posix()
+        if not normalized:
+            return True
+        if normalized.startswith("docs/exec_records/"):
+            return True
+        if normalized in {"README.md", "AGENTS.md"}:
+            return True
+        if normalized.startswith("docs/") and PurePosixPath(normalized).suffix.lower() in {".md", ".mdx", ".rst", ".txt"}:
+            return True
+        if normalized.startswith("templates/") and "/blocks/" in normalized and normalized.endswith(".md.tmpl"):
+            return True
+        return False
+
+    def _section_has_meaningful_content(self, text: str, section_title: str) -> bool:
+        section_pattern = re.compile(
+            rf"^## {re.escape(section_title)}\n(?P<body>.*?)(?=^## |\Z)",
+            re.MULTILINE | re.DOTALL,
+        )
+        match = section_pattern.search(text)
+        if match is None:
+            return False
+        body_lines = [line.strip() for line in match.group("body").splitlines() if line.strip()]
+        if not body_lines:
+            return False
+        return any(line not in {"TODO", "- TODO"} for line in body_lines)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -148,12 +220,31 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-branch", required=True)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--reuse-latest", action="store_true")
+    parser.add_argument("--check-commit-flow", action="store_true")
+    parser.add_argument("--exec-id", type=int)
+    parser.add_argument("--path", dest="paths", action="append", default=[])
+    parser.add_argument("--json", action="store_true")
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
     service = ExecRecordHygieneService()
+    if args.check_commit_flow:
+        if args.exec_id is None:
+            raise SystemExit("--exec-id is required with --check-commit-flow")
+        result = service.validate_commit_flow(args.repo_root, args.exec_id, list(args.paths))
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        missing_items = list(result.get("missing_items", []))
+        if missing_items:
+            print("[commit-msg] Code changes require test -> review -> commit.", file=sys.stderr)
+            print(f"[commit-msg] Update {result['record_path']} before retrying.", file=sys.stderr)
+            for item in missing_items:
+                print(f"[commit-msg] {item}", file=sys.stderr)
+            return 1
+        return 0
+
     audit = service.audit_placeholders(args.repo_root, args.target_branch)
     reusable_exec_id = audit.get("reusable_exec_id") if args.reuse_latest else None
     result: dict[str, object] = {"audit": audit, "cleanup": None, "reusable_exec_id": reusable_exec_id}

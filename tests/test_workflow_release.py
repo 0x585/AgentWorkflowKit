@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -53,6 +54,71 @@ class WorkflowReleaseTest(unittest.TestCase):
             "# Execution Records\n\n| ID | Date | Summary |\n|---|---|---|\n",
             encoding="utf-8",
         )
+
+    def write_exec_record(
+        self,
+        repo_root: Path,
+        exec_id: int,
+        *,
+        target_branch: str = "main",
+        tests_checked: bool = False,
+        review_checked: bool = False,
+        verification_lines: list[str] | None = None,
+        review_lines: list[str] | None = None,
+    ) -> Path:
+        verification_payload = verification_lines or ["- TODO"]
+        review_payload = review_lines or ["- TODO"]
+        tests_mark = "x" if tests_checked else " "
+        review_mark = "x" if review_checked else " "
+        record_path = repo_root / "docs" / "exec_records" / f"{exec_id}.md"
+        record_path.write_text(
+            textwrap.dedent(
+                f"""\
+                # {exec_id}
+
+                ## 完成定义（DoD）
+
+                - [x] 需求目标已明确（含“是否必须 merge 到 {target_branch} 并删除分支”）
+                - [{tests_mark}] 若有代码修改：已执行测试并记录结果
+                - [{review_mark}] 若有代码修改：已完成变更审查并记录结论
+                - [ ] 若为代码任务：已 push / auto-release，并完成下游应用
+
+                ## 需求摘要
+
+                测试 commit-msg hook 的代码变更提交流程校验。
+
+                ## 变更文件
+
+                - TODO
+
+                ## 变更说明
+
+                - TODO
+
+                ## 验证结果
+
+                {chr(10).join(verification_payload)}
+
+                ## 审查结果
+
+                {chr(10).join(review_payload)}
+
+                ## 完成待办项
+
+                - 无
+
+                ## 当前占用待办项
+
+                - 无
+
+                ## 风险与回滚
+
+                - TODO
+                """
+            ),
+            encoding="utf-8",
+        )
+        return record_path
 
     def copy_runtime_sources(self, target_root: Path) -> None:
         shutil.copytree(self.workflow_root / ".workflow-kit", target_root / ".workflow-kit")
@@ -448,6 +514,33 @@ exec "$ROOT/.workflow-kit/new_branch.sh" "$@"
             ).read_text(encoding="utf-8")
             self.assertIn("git add -A", prepare_commit_template)
             self.assertIn('"ready"', prepare_commit_template)
+
+            new_exec_template = (
+                workflow_root / "templates" / "full_codex_flow" / "files" / ".workflow-kit" / "new_exec.sh.tmpl"
+            ).read_text(encoding="utf-8")
+            self.assertIn("若有代码修改：已执行测试并记录结果", new_exec_template)
+            self.assertIn("## 审查结果", new_exec_template)
+            self.assertIn("# Review", new_exec_template)
+
+            commit_msg_template = (
+                workflow_root / "templates" / "full_codex_flow" / "files" / ".githooks" / "commit-msg.tmpl"
+            ).read_text(encoding="utf-8")
+            self.assertIn("--check-commit-flow", commit_msg_template)
+
+            post_commit_template = (
+                workflow_root / "templates" / "full_codex_flow" / "files" / ".githooks" / "post-commit.tmpl"
+            ).read_text(encoding="utf-8")
+            self.assertNotIn("apply_downstreams.py", post_commit_template)
+
+            autorelease_template = (
+                workflow_root
+                / "templates"
+                / "full_codex_flow"
+                / "files"
+                / ".workflow-kit"
+                / "session_push_autorelease.sh.tmpl"
+            ).read_text(encoding="utf-8")
+            self.assertIn("apply_downstreams.py", autorelease_template)
 
     def test_apply_release_brushes_legacy_agents_workflow_sections(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -975,6 +1068,95 @@ exit 42
             )
             self.assertNotEqual(0, blocked_elsewhere.returncode)
             self.assertIn("Code edits are only allowed", blocked_elsewhere.stderr)
+
+    def test_commit_msg_blocks_code_commit_until_exec_record_documents_test_and_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/commit-flow-check",
+                worktree_suffix="commit-flow-check",
+            )
+
+            code_path = worktree_root / "src" / "main" / "python" / "temp_repo" / "feature.py"
+            code_path.parent.mkdir(parents=True, exist_ok=True)
+            code_path.write_text("FEATURE_FLAG = True\n", encoding="utf-8")
+            self.git(worktree_root, "add", str(code_path.relative_to(worktree_root)))
+
+            exec_id = 2001
+            self.write_exec_record(worktree_root, exec_id)
+            message_file = worktree_root / "COMMIT_MSG"
+            message_file.write_text(f"[{exec_id}] feat(workflow): enforce commit flow\n", encoding="utf-8")
+
+            blocked = subprocess.run(
+                [str(worktree_root / ".githooks" / "commit-msg"), str(message_file)],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(1, blocked.returncode)
+            self.assertIn("Code changes require test -> review -> commit.", blocked.stderr)
+            self.assertIn("完成定义缺少勾选：若有代码修改：已执行测试并记录结果", blocked.stderr)
+            self.assertIn("章节未完成：## 审查结果", blocked.stderr)
+
+            self.write_exec_record(
+                worktree_root,
+                exec_id,
+                tests_checked=True,
+                review_checked=True,
+                verification_lines=["- `python3 -m unittest` 通过"],
+                review_lines=["- 已完成自审，确认代码路径提交会先校验测试与审查记录"],
+            )
+
+            allowed = subprocess.run(
+                [str(worktree_root / ".githooks" / "commit-msg"), str(message_file)],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, allowed.returncode)
+
+    def test_commit_msg_allows_docs_only_commit_without_code_review_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/docs-only-commit",
+                worktree_suffix="docs-only-commit",
+            )
+
+            readme_path = worktree_root / "README.md"
+            readme_path.write_text(readme_path.read_text(encoding="utf-8") + "docs-only\n", encoding="utf-8")
+            self.git(worktree_root, "add", "README.md")
+
+            exec_id = 2002
+            self.write_exec_record(worktree_root, exec_id)
+            message_file = worktree_root / "COMMIT_MSG"
+            message_file.write_text(f"[{exec_id}] docs(workflow): update docs only\n", encoding="utf-8")
+
+            allowed = subprocess.run(
+                [str(worktree_root / ".githooks" / "commit-msg"), str(message_file)],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, allowed.returncode)
 
     def test_submit_release_to_repo_via_worktree_commit_skips_current_repo(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
