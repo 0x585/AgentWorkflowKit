@@ -66,6 +66,7 @@ python3 scripts/publish_release.py --profile full_codex_flow --version <new-vers
 - `session_push_autorelease.sh` 会在 `<default-branch>` push 成功后再执行 `python3 scripts/apply_downstreams.py`，避免在 auto-release 前提早 fan-out。
 - 为兼容旧版下游 runtime，中央 downstream apply 在调用子仓 `new_worktree.sh` 时会临时设置 `SKIP_SHARED_VENV_LINK=1`；待当前 release 应用完成后，再由新 runtime 补做共享 `.venv` 修复。
 - 下游 `AGENTS.md` 中散落的通用 workflow 章节会在 apply 时刷洗并收束到固定 managed block；块外应只保留仓库特有规则。
+- 下游 `workflow_guard` 只允许在 `codex/*` 工作区里对过期 release 执行自动 apply；若当前位于 primary checkout 或默认分支，必须 fail closed 并提示改走中央仓库 apply / release 流程，避免把子仓 `main` 弄脏。
 - Therefore, “changed workflow source but did not publish release yet” is an invalid handoff state for downstream sync.
 - Use `docs/USAGE.md` for the full release/apply/onboarding procedure.
 

@@ -865,13 +865,59 @@ Run `./scripts/new_exec.sh`.
             self.copy_workflow_repo(workflow_root)
 
             repo_root = temp_root / "TempRepo"
-            repo_root.mkdir(parents=True)
-            subprocess.run(["git", "init", str(repo_root)], check=True, capture_output=True, text=True)
-            self.write_repo_docs(repo_root)
-            self.write_temp_repo_config(workflow_root, repo_root)
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            self.publish_temp_release(workflow_root, "1.0.1")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/upgrade-guard-test",
+                worktree_suffix="upgrade-guard-test",
+            )
 
-            self.publish_temp_release(workflow_root, "1.0.0")
-            apply_release_to_repo(workflow_root=workflow_root, repo_root=repo_root, repo_id="TempRepo")
+            entry_script = worktree_root / "entry.sh"
+            entry_script.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+
+version="$(python3 - <<'PY'
+import json
+from pathlib import Path
+
+print(json.loads(Path('.workflow-kit/install.json').read_text(encoding='utf-8'))['workflow_version'])
+PY
+)"
+printf '%s\n' "$version" >> entry.log
+if [[ "$version" == "1.0.1" ]]; then
+  exit 0
+fi
+exit 42
+""",
+                encoding="utf-8",
+            )
+            entry_script.chmod(0o755)
+
+            result = subprocess.run(
+                [str(worktree_root / ".workflow-kit" / "workflow_guard.sh"), str(entry_script)],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode)
+            self.assertIn("Applying latest release and retrying", result.stderr)
+            install = load_json(worktree_root / ".workflow-kit" / "install.json")
+            self.assertEqual("1.0.1", install["workflow_version"])
+            entry_runs = (worktree_root / "entry.log").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(["1.0.0", "1.0.1"], entry_runs)
+
+    def test_workflow_guard_blocks_auto_upgrade_on_primary_default_branch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
             self.publish_temp_release(workflow_root, "1.0.1")
 
             entry_script = repo_root / "entry.sh"
@@ -904,12 +950,13 @@ exit 42
                 text=True,
             )
 
-            self.assertEqual(0, result.returncode)
-            self.assertIn("Applying latest release and retrying", result.stderr)
+            self.assertEqual(42, result.returncode)
+            self.assertIn("auto-apply is disabled on primary workspace", result.stderr)
+            self.assertNotIn("Applying latest release and retrying", result.stderr)
             install = load_json(repo_root / ".workflow-kit" / "install.json")
-            self.assertEqual("1.0.1", install["workflow_version"])
+            self.assertEqual("1.0.0", install["workflow_version"])
             entry_runs = (repo_root / "entry.log").read_text(encoding="utf-8").splitlines()
-            self.assertEqual(["1.0.0", "1.0.1"], entry_runs)
+            self.assertEqual(["1.0.0"], entry_runs)
 
     def test_prepare_commit_reports_commit_readiness_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
