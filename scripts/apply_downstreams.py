@@ -25,6 +25,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--profile", default=DEFAULT_PROFILE)
     parser.add_argument("--include-self", action="store_true")
+    parser.add_argument("--repo-id", action="append", dest="repo_ids")
+    parser.add_argument("--resume-existing-worktree", action="store_true")
     return parser
 
 
@@ -44,11 +46,18 @@ def main() -> int:
         raise SystemExit(
             "Current release artifacts are stale. Publish a new release before applying downstream repositories."
         )
+    available_repo_ids = repo_ids_from_workflow_root(workflow_root)
+    selected_repo_ids = set(args.repo_ids or [])
+    unknown_repo_ids = sorted(selected_repo_ids - set(available_repo_ids))
+    if unknown_repo_ids:
+        raise SystemExit(f"Unknown repo ids: {', '.join(unknown_repo_ids)}")
     summaries: list[dict[str, object]] = []
     failed_repo_count = 0
 
-    for repo_id in repo_ids_from_workflow_root(workflow_root):
+    for repo_id in available_repo_ids:
         if not args.include_self and repo_id == source_repo_id:
+            continue
+        if selected_repo_ids and repo_id not in selected_repo_ids:
             continue
         repo_config = load_repo_config(workflow_root, repo_id)
         if repo_profile(repo_config) != args.profile:
@@ -58,6 +67,7 @@ def main() -> int:
             repo_root=Path(str(repo_config["expected_workspace_root"])),
             repo_id=repo_id,
             profile=args.profile,
+            resume_existing_worktree=args.resume_existing_worktree,
         )
         summaries.append(summary)
         if summary.get("action") == "failed":

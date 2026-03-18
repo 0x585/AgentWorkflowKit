@@ -58,6 +58,11 @@ if [[ "$STAGE_ALL" -eq 1 ]]; then
   ACTION_TAKEN="staged_all"
 fi
 
+STAGED_SNAPSHOT="$(
+  git diff --cached --binary --no-ext-diff -- . ':(exclude)docs/exec_records/**' \
+    | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
+)"
+
 declare -a STAGED_TRACKED=()
 declare -a UNSTAGED_TRACKED=()
 declare -a UNTRACKED=()
@@ -98,7 +103,7 @@ print_section() {
 }
 
 if [[ "$JSON_OUTPUT" -eq 1 ]]; then
-  json_args=("$READY" "$ACTION_TAKEN" "__WF_STAGE__")
+  json_args=("$READY" "$ACTION_TAKEN" "$STAGED_SNAPSHOT" "__WF_STAGE__")
   if [[ "${#STAGED_TRACKED[@]}" -gt 0 ]]; then
     json_args+=("${STAGED_TRACKED[@]}")
   fi
@@ -116,6 +121,7 @@ import sys
 
 ready = sys.argv[1] == "1"
 action_taken = sys.argv[2]
+staged_snapshot = sys.argv[3]
 
 sentinels = {
     "__WF_STAGE__": "staged_tracked",
@@ -124,7 +130,7 @@ sentinels = {
 }
 payload = {value: [] for value in sentinels.values()}
 current_key = None
-for item in sys.argv[3:]:
+for item in sys.argv[4:]:
     if item in sentinels:
         current_key = sentinels[item]
         continue
@@ -136,6 +142,7 @@ payload.update(
     {
         "ready": ready,
         "action_taken": action_taken,
+        "staged_snapshot": staged_snapshot,
         "staged_count": len(payload["staged_tracked"]),
         "unstaged_count": len(payload["unstaged_tracked"]),
         "untracked_count": len(payload["untracked"]),
@@ -150,6 +157,7 @@ else
     echo "[prepare-commit] Commit-ready: no"
   fi
   echo "[prepare-commit] Action taken: ${ACTION_TAKEN}"
+  echo "[prepare-commit] Staged snapshot: ${STAGED_SNAPSHOT:-UNKNOWN}"
   if [[ "${#STAGED_TRACKED[@]}" -gt 0 ]]; then
     print_section "Staged tracked changes" "${STAGED_TRACKED[@]}"
   else

@@ -49,11 +49,13 @@ The central repository itself uses `/Users/pi/PyCharmProject/PublicWorkRegister/
 ## Managed Git Workflow
 
 - Profile: `full_codex_flow`
-- Workflow version: `1.0.17`
+- Workflow version: `1.0.21`
 - Workflow source metadata: `.workflow-kit/source.json`
 - Managed workflow entrypoints live under `.workflow-kit/`.
 - Managed hooks live under `.githooks/`.
+- For code changes, finish and record `test -> review -> commit` before relying on auto-push / auto-release.
 - Pre-commit close-up entrypoint: `./.workflow-kit/prepare_commit.sh` (use `--stage` for an explicit `git add -A` before commit).
+- Exec records under `docs/exec_records/` must include structured `验证结果` / `审查结果`, and both `提交快照` fields must match the final staged snapshot before code commits can pass `commit-msg`.
 - Legacy managed workflow entrypoints and workflow `scripts/*` wrappers are removed during release apply; project-owned scripts should call `.workflow-kit/*` directly.
 - This repository must not locally customize managed git workflow files.
 - Keep centrally managed workflow guidance in this fixed block; keep project-specific architecture and domain docs in the rest of the README.

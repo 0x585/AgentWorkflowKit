@@ -6,13 +6,18 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
-from pathlib import PurePosixPath
 import re
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+
+SECTION_FIELD_ORDER = {
+    "验证结果": ("命令", "范围", "结果", "未覆盖项", "提交快照"),
+    "审查结果": ("审查方式", "结论", "残余风险", "提交快照"),
+}
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if os.environ.get("WORKFLOW_GUARD_ACTIVE") != "1":
@@ -131,9 +136,16 @@ class ExecRecordHygieneService:
             "## 变更说明\n\n"
             "- TODO\n\n"
             "## 验证结果\n\n"
-            "- TODO\n\n"
+            "- 命令：TODO\n"
+            "- 范围：TODO\n"
+            "- 结果：TODO\n"
+            "- 未覆盖项：TODO\n"
+            "- 提交快照：TODO\n\n"
             "## 审查结果\n\n"
-            "- TODO\n\n"
+            "- 审查方式：TODO\n"
+            "- 结论：TODO\n"
+            "- 残余风险：TODO\n"
+            "- 提交快照：TODO\n\n"
             "## 完成待办项\n\n"
             "- 无\n\n"
             "## 当前占用待办项\n\n"
@@ -146,19 +158,30 @@ class ExecRecordHygieneService:
         return (
             f"[{exec_id}] type(scope): summary\n\n"
             "# Changes\n# - TODO\n\n"
-            "# Tests\n# - TODO\n\n"
-            "# Review\n# - TODO\n\n"
+            "# Tests\n"
+            "# - 命令：TODO\n"
+            "# - 范围：TODO\n"
+            "# - 结果：TODO\n"
+            "# - 未覆盖项：TODO\n"
+            "# - 提交快照：TODO\n\n"
+            "# Review\n"
+            "# - 审查方式：TODO\n"
+            "# - 结论：TODO\n"
+            "# - 残余风险：TODO\n"
+            "# - 提交快照：TODO\n\n"
             "# Risks\n# - TODO\n"
         )
 
     def validate_commit_flow(self, repo_root: Path, exec_id: int, staged_paths: list[str]) -> dict[str, object]:
         record_path = repo_root / "docs" / "exec_records" / f"{exec_id}.md"
         requires_test_review = any(not self._is_doc_only_path(path) for path in staged_paths)
+        current_staged_snapshot = self.current_staged_snapshot(repo_root)
         result: dict[str, object] = {
             "exec_id": exec_id,
             "record_path": str(record_path),
             "staged_paths": staged_paths,
             "requires_test_review": requires_test_review,
+            "current_staged_snapshot": current_staged_snapshot,
             "missing_items": [],
         }
         if not requires_test_review:
@@ -179,12 +202,45 @@ class ExecRecordHygieneService:
             if pattern.search(text) is None:
                 missing_items.append(f"完成定义缺少勾选：{item}")
 
-        for section_title in ("验证结果", "审查结果"):
-            if not self._section_has_meaningful_content(text, section_title):
-                missing_items.append(f"章节未完成：## {section_title}")
+        missing_items.extend(self._validate_structured_section(text, "验证结果", current_staged_snapshot))
+        missing_items.extend(self._validate_structured_section(text, "审查结果", current_staged_snapshot))
 
         result["missing_items"] = missing_items
         return result
+
+    def current_staged_snapshot(self, repo_root: Path) -> str:
+        process = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "diff",
+                "--cached",
+                "--binary",
+                "--no-ext-diff",
+                "--",
+                ".",
+                ":(exclude)docs/exec_records/**",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        return hashlib.sha256(process.stdout).hexdigest()
+
+    def sync_staged_snapshot(self, repo_root: Path, exec_id: int) -> dict[str, object]:
+        record_path = repo_root / "docs" / "exec_records" / f"{exec_id}.md"
+        if not record_path.is_file():
+            raise FileNotFoundError(f"Execution record missing: {record_path}")
+        current_staged_snapshot = self.current_staged_snapshot(repo_root)
+        text = record_path.read_text(encoding="utf-8")
+        for section_title in SECTION_FIELD_ORDER:
+            text = self._upsert_section_field(text, section_title, "提交快照", current_staged_snapshot)
+        record_path.write_text(text, encoding="utf-8")
+        return {
+            "exec_id": exec_id,
+            "record_path": str(record_path),
+            "current_staged_snapshot": current_staged_snapshot,
+        }
 
     def _is_doc_only_path(self, path: str) -> bool:
         normalized = PurePosixPath(path).as_posix()
@@ -200,27 +256,74 @@ class ExecRecordHygieneService:
             return True
         return False
 
-    def _section_has_meaningful_content(self, text: str, section_title: str) -> bool:
+    def _extract_section_body(self, text: str, section_title: str) -> str | None:
         section_pattern = re.compile(
             rf"^## {re.escape(section_title)}\n(?P<body>.*?)(?=^## |\Z)",
             re.MULTILINE | re.DOTALL,
         )
         match = section_pattern.search(text)
         if match is None:
-            return False
-        body_lines = [line.strip() for line in match.group("body").splitlines() if line.strip()]
-        if not body_lines:
-            return False
-        return any(line not in {"TODO", "- TODO"} for line in body_lines)
+            return None
+        return match.group("body")
+
+    def _validate_structured_section(self, text: str, section_title: str, current_staged_snapshot: str) -> list[str]:
+        body = self._extract_section_body(text, section_title)
+        if body is None:
+            return [f"章节未完成：## {section_title}"]
+        fields = {}
+        for raw_line in body.splitlines():
+            line = raw_line.strip()
+            match = re.match(r"^- ([^：]+)：\s*(.*)$", line)
+            if match is None:
+                continue
+            fields[match.group(1).strip()] = match.group(2).strip()
+        missing_items: list[str] = []
+        for field_name in SECTION_FIELD_ORDER[section_title]:
+            if field_name not in fields:
+                missing_items.append(f"章节缺少字段：## {section_title} / {field_name}")
+                continue
+            value = fields[field_name]
+            if not value or "TODO" in value:
+                missing_items.append(f"章节字段未完成：## {section_title} / {field_name}")
+                continue
+            if field_name == "提交快照" and value != current_staged_snapshot:
+                missing_items.append(f"提交快照不匹配：## {section_title}")
+        return missing_items
+
+    def _upsert_section_field(self, text: str, section_title: str, field_name: str, value: str) -> str:
+        section_pattern = re.compile(
+            rf"(^## {re.escape(section_title)}\n)(?P<body>.*?)(?=^## |\Z)",
+            re.MULTILINE | re.DOTALL,
+        )
+        match = section_pattern.search(text)
+        if match is None:
+            raise RuntimeError(f"Section not found: {section_title}")
+        body = match.group("body")
+        field_pattern = re.compile(rf"(?m)^- {re.escape(field_name)}：.*$")
+        replacement = f"- {field_name}：{value}"
+        if field_pattern.search(body):
+            updated_body = field_pattern.sub(replacement, body, count=1)
+        else:
+            suffix = "" if body.endswith("\n") or not body else "\n"
+            updated_body = f"{body}{suffix}{replacement}\n"
+        return text[: match.start("body")] + updated_body + text[match.end("body") :]
+
+    def _git_output(self, repo_root: Path, *args: str) -> str:
+        return subprocess.check_output(
+            ["git", "-C", str(repo_root), *args],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Audit and cleanup placeholder exec record residue.")
     parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
-    parser.add_argument("--target-branch", required=True)
+    parser.add_argument("--target-branch")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--reuse-latest", action="store_true")
     parser.add_argument("--check-commit-flow", action="store_true")
+    parser.add_argument("--sync-staged-snapshot", action="store_true")
     parser.add_argument("--exec-id", type=int)
     parser.add_argument("--path", dest="paths", action="append", default=[])
     parser.add_argument("--json", action="store_true")
@@ -240,10 +343,22 @@ def main() -> int:
         if missing_items:
             print("[commit-msg] Code changes require test -> review -> commit.", file=sys.stderr)
             print(f"[commit-msg] Update {result['record_path']} before retrying.", file=sys.stderr)
+            print(f"[commit-msg] Current staged snapshot: {result['current_staged_snapshot']}", file=sys.stderr)
+            print("[commit-msg] Refresh both '提交快照' fields after final staging.", file=sys.stderr)
             for item in missing_items:
                 print(f"[commit-msg] {item}", file=sys.stderr)
             return 1
         return 0
+
+    if args.sync_staged_snapshot:
+        if args.exec_id is None:
+            raise SystemExit("--exec-id is required with --sync-staged-snapshot")
+        result = service.sync_staged_snapshot(args.repo_root, args.exec_id)
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result["current_staged_snapshot"])
+        return 0
+
+    if not args.target_branch:
+        raise SystemExit("--target-branch is required unless using --check-commit-flow or --sync-staged-snapshot")
 
     audit = service.audit_placeholders(args.repo_root, args.target_branch)
     reusable_exec_id = audit.get("reusable_exec_id") if args.reuse_latest else None

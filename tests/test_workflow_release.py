@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -55,6 +56,25 @@ class WorkflowReleaseTest(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def staged_snapshot(self, repo_root: Path) -> str:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "diff",
+                "--cached",
+                "--binary",
+                "--no-ext-diff",
+                "--",
+                ".",
+                ":(exclude)docs/exec_records/**",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        return hashlib.sha256(result.stdout).hexdigest()
+
     def write_exec_record(
         self,
         repo_root: Path,
@@ -63,11 +83,16 @@ class WorkflowReleaseTest(unittest.TestCase):
         target_branch: str = "main",
         tests_checked: bool = False,
         review_checked: bool = False,
-        verification_lines: list[str] | None = None,
-        review_lines: list[str] | None = None,
+        test_command: str = "TODO",
+        test_scope: str = "TODO",
+        test_result: str = "TODO",
+        test_uncovered: str = "TODO",
+        test_snapshot: str = "TODO",
+        review_method: str = "TODO",
+        review_conclusion: str = "TODO",
+        review_risk: str = "TODO",
+        review_snapshot: str = "TODO",
     ) -> Path:
-        verification_payload = verification_lines or ["- TODO"]
-        review_payload = review_lines or ["- TODO"]
         tests_mark = "x" if tests_checked else " "
         review_mark = "x" if review_checked else " "
         record_path = repo_root / "docs" / "exec_records" / f"{exec_id}.md"
@@ -97,11 +122,18 @@ class WorkflowReleaseTest(unittest.TestCase):
 
                 ## 验证结果
 
-                {chr(10).join(verification_payload)}
+                - 命令：{test_command}
+                - 范围：{test_scope}
+                - 结果：{test_result}
+                - 未覆盖项：{test_uncovered}
+                - 提交快照：{test_snapshot}
 
                 ## 审查结果
 
-                {chr(10).join(review_payload)}
+                - 审查方式：{review_method}
+                - 结论：{review_conclusion}
+                - 残余风险：{review_risk}
+                - 提交快照：{review_snapshot}
 
                 ## 完成待办项
 
@@ -478,6 +510,7 @@ exec "$ROOT/.workflow-kit/new_branch.sh" "$@"
             shutil.copytree(self.workflow_root / "profiles", workflow_root / "profiles")
             shutil.copytree(self.workflow_root / "templates", workflow_root / "templates")
             shutil.copytree(self.workflow_root / "repos", workflow_root / "repos")
+            shutil.copytree(self.workflow_root / "scripts", workflow_root / "scripts")
             self.copy_runtime_sources(workflow_root)
             write_json(workflow_root / ".workflow-kit" / "source.json", {"repo_id": "AgentWorkflowKit"})
 
@@ -514,13 +547,15 @@ exec "$ROOT/.workflow-kit/new_branch.sh" "$@"
             ).read_text(encoding="utf-8")
             self.assertIn("git add -A", prepare_commit_template)
             self.assertIn('"ready"', prepare_commit_template)
+            self.assertIn('"staged_snapshot"', prepare_commit_template)
 
             new_exec_template = (
                 workflow_root / "templates" / "full_codex_flow" / "files" / ".workflow-kit" / "new_exec.sh.tmpl"
             ).read_text(encoding="utf-8")
             self.assertIn("若有代码修改：已执行测试并记录结果", new_exec_template)
-            self.assertIn("## 审查结果", new_exec_template)
-            self.assertIn("# Review", new_exec_template)
+            self.assertIn("- 提交快照：TODO", new_exec_template)
+            self.assertIn("- 审查方式：TODO", new_exec_template)
+            self.assertIn("# - 提交快照：TODO", new_exec_template)
 
             commit_msg_template = (
                 workflow_root / "templates" / "full_codex_flow" / "files" / ".githooks" / "commit-msg.tmpl"
@@ -541,6 +576,10 @@ exec "$ROOT/.workflow-kit/new_branch.sh" "$@"
                 / "session_push_autorelease.sh.tmpl"
             ).read_text(encoding="utf-8")
             self.assertIn("apply_downstreams.py", autorelease_template)
+
+            apply_downstreams_script = (workflow_root / "scripts" / "apply_downstreams.py").read_text(encoding="utf-8")
+            self.assertIn("--resume-existing-worktree", apply_downstreams_script)
+            self.assertIn("--repo-id", apply_downstreams_script)
 
     def test_apply_release_brushes_legacy_agents_workflow_sections(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -989,6 +1028,7 @@ exit 42
             payload = json.loads(result.stdout)
             self.assertFalse(payload["ready"])
             self.assertEqual("none", payload["action_taken"])
+            self.assertTrue(payload["staged_snapshot"])
             self.assertIn("README.md", payload["staged_tracked"])
             self.assertIn("AGENTS.md", payload["unstaged_tracked"])
             self.assertIn("NOTES.tmp", payload["untracked"])
@@ -1022,6 +1062,7 @@ exit 42
             payload = json.loads(result.stdout)
             self.assertTrue(payload["ready"])
             self.assertEqual("staged_all", payload["action_taken"])
+            self.assertTrue(payload["staged_snapshot"])
             self.assertEqual(0, payload["unstaged_count"])
             self.assertEqual(0, payload["untracked_count"])
             status_lines = self.git(repo_root, "status", "--short").stdout.splitlines()
@@ -1116,6 +1157,32 @@ exit 42
             self.assertNotEqual(0, blocked_elsewhere.returncode)
             self.assertIn("Code edits are only allowed", blocked_elsewhere.stderr)
 
+    def test_post_commit_skip_post_commit_automation_exits_early(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/post-commit-skip",
+                worktree_suffix="post-commit-skip",
+            )
+
+            result = subprocess.run(
+                [str(worktree_root / ".githooks" / "post-commit")],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env={"SKIP_POST_COMMIT_AUTOMATION": "1", **os.environ},
+            )
+
+            self.assertEqual(0, result.returncode)
+            self.assertIn("SKIP_POST_COMMIT_AUTOMATION=1", result.stdout)
+
     def test_commit_msg_blocks_code_commit_until_exec_record_documents_test_and_review(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             temp_root = Path(tmp_dir)
@@ -1151,15 +1218,22 @@ exit 42
             self.assertEqual(1, blocked.returncode)
             self.assertIn("Code changes require test -> review -> commit.", blocked.stderr)
             self.assertIn("完成定义缺少勾选：若有代码修改：已执行测试并记录结果", blocked.stderr)
-            self.assertIn("章节未完成：## 审查结果", blocked.stderr)
+            self.assertIn("章节字段未完成：## 审查结果 / 审查方式", blocked.stderr)
 
             self.write_exec_record(
                 worktree_root,
                 exec_id,
                 tests_checked=True,
                 review_checked=True,
-                verification_lines=["- `python3 -m unittest` 通过"],
-                review_lines=["- 已完成自审，确认代码路径提交会先校验测试与审查记录"],
+                test_command="python3 -m unittest",
+                test_scope="src/main/python/temp_repo/feature.py",
+                test_result="通过",
+                test_uncovered="未覆盖集成链路",
+                test_snapshot=self.staged_snapshot(worktree_root),
+                review_method="自审",
+                review_conclusion="已完成自审，确认代码路径提交会先校验测试与审查记录",
+                review_risk="无额外残余风险",
+                review_snapshot=self.staged_snapshot(worktree_root),
             )
 
             allowed = subprocess.run(
@@ -1171,6 +1245,118 @@ exit 42
             )
 
             self.assertEqual(0, allowed.returncode)
+
+    def test_commit_msg_blocks_code_commit_when_snapshot_is_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/commit-snapshot-stale",
+                worktree_suffix="commit-snapshot-stale",
+            )
+
+            code_path = worktree_root / "src" / "main" / "python" / "temp_repo" / "feature.py"
+            code_path.parent.mkdir(parents=True, exist_ok=True)
+            code_path.write_text("VERSION = 1\n", encoding="utf-8")
+            self.git(worktree_root, "add", str(code_path.relative_to(worktree_root)))
+            original_snapshot = self.staged_snapshot(worktree_root)
+
+            code_path.write_text("VERSION = 2\n", encoding="utf-8")
+            self.git(worktree_root, "add", str(code_path.relative_to(worktree_root)))
+            current_snapshot = self.staged_snapshot(worktree_root)
+
+            exec_id = 2003
+            self.write_exec_record(
+                worktree_root,
+                exec_id,
+                tests_checked=True,
+                review_checked=True,
+                test_command="python3 -m unittest",
+                test_scope="src/main/python/temp_repo/feature.py",
+                test_result="通过",
+                test_uncovered="无",
+                test_snapshot=original_snapshot,
+                review_method="自审",
+                review_conclusion="通过",
+                review_risk="无",
+                review_snapshot=original_snapshot,
+            )
+            message_file = worktree_root / "COMMIT_MSG"
+            message_file.write_text(f"[{exec_id}] feat(workflow): reject stale snapshot\n", encoding="utf-8")
+
+            blocked = subprocess.run(
+                [str(worktree_root / ".githooks" / "commit-msg"), str(message_file)],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(1, blocked.returncode)
+            self.assertIn("提交快照不匹配：## 验证结果", blocked.stderr)
+            self.assertIn(current_snapshot, blocked.stderr)
+
+    def test_exec_record_hygiene_can_sync_current_staged_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/sync-staged-snapshot",
+                worktree_suffix="sync-staged-snapshot",
+            )
+
+            code_path = worktree_root / "src" / "main" / "python" / "temp_repo" / "feature.py"
+            code_path.parent.mkdir(parents=True, exist_ok=True)
+            code_path.write_text("SYNC = True\n", encoding="utf-8")
+            self.git(worktree_root, "add", str(code_path.relative_to(worktree_root)))
+
+            exec_id = 2004
+            self.write_exec_record(
+                worktree_root,
+                exec_id,
+                tests_checked=True,
+                review_checked=True,
+                test_command="python3 -m unittest",
+                test_scope="src/main/python/temp_repo/feature.py",
+                test_result="通过",
+                test_uncovered="无",
+                review_method="自审",
+                review_conclusion="通过",
+                review_risk="无",
+            )
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(worktree_root / ".workflow-kit" / "exec_record_hygiene.py"),
+                    "--sync-staged-snapshot",
+                    "--exec-id",
+                    str(exec_id),
+                    "--json",
+                ],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env={"WORKFLOW_GUARD_ACTIVE": "1", **os.environ},
+            )
+
+            self.assertEqual(0, result.returncode)
+            payload = json.loads(result.stdout)
+            snapshot = self.staged_snapshot(worktree_root)
+            self.assertEqual(snapshot, payload["current_staged_snapshot"])
+            record_text = (worktree_root / "docs" / "exec_records" / f"{exec_id}.md").read_text(encoding="utf-8")
+            self.assertEqual(2, record_text.count(f"- 提交快照：{snapshot}"))
 
     def test_commit_msg_allows_docs_only_commit_without_code_review_sections(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1406,6 +1592,40 @@ fi
             self.assertEqual("failed", summary["action"])
             self.assertIn("Branch already exists locally", str(summary["error"]))
 
+    def test_submit_release_to_repo_via_worktree_commit_reuses_existing_worktree_when_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            self.publish_temp_release(workflow_root, "1.0.1")
+            existing_worktree = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/workflow-release-1-0-1",
+                worktree_suffix="workflow-release-1-0-1",
+            )
+            subprocess.run(
+                [str(existing_worktree / ".workflow-kit" / "new_exec.sh"), "--no-sync"],
+                cwd=existing_worktree,
+                check=True,
+                capture_output=True,
+                text=True,
+                env={"WORKFLOW_GUARD_ACTIVE": "1", **os.environ},
+            )
+
+            summary = submit_release_to_repo_via_worktree_commit(
+                workflow_root=workflow_root,
+                repo_root=repo_root,
+                repo_id="TempRepo",
+                resume_existing_worktree=True,
+            )
+
+            self.assertEqual("committed", summary["action"])
+            self.assertTrue(summary["resumed_existing_worktree"])
+            self.assertEqual(existing_worktree.resolve(), Path(str(summary["worktree_path"])).resolve())
+
     def test_apply_downstreams_continues_after_failure_and_returns_nonzero(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             temp_root = Path(tmp_dir)
@@ -1445,6 +1665,56 @@ fi
             actions = {entry["repo_id"]: entry["action"] for entry in payload["repositories"]}
             self.assertEqual("committed", actions["GoodRepo"])
             self.assertEqual("failed", actions["BadRepo"])
+
+    def test_apply_downstreams_can_target_single_repo_with_resume_existing_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+            shutil.rmtree(workflow_root / "repos")
+            (workflow_root / "repos").mkdir(parents=True, exist_ok=True)
+            write_json(workflow_root / ".workflow-kit" / "source.json", {"repo_id": "WorkflowRepo"})
+            self.write_named_repo_config(workflow_root, workflow_root, repo_id="WorkflowRepo", default_branch="main")
+
+            only_repo_root = temp_root / "OnlyRepo"
+            other_repo_root = temp_root / "OtherRepo"
+            self.bootstrap_managed_repo(workflow_root, only_repo_root, repo_id="OnlyRepo", installed_version="1.0.0")
+            self.bootstrap_managed_repo(workflow_root, other_repo_root, repo_id="OtherRepo", installed_version="1.0.0")
+            self.publish_release_for_repo_ids(workflow_root, "1.0.1", ["WorkflowRepo", "OnlyRepo", "OtherRepo"])
+
+            existing_worktree = self.create_managed_worktree(
+                only_repo_root,
+                branch_name="codex/workflow-release-1-0-1",
+                worktree_suffix="workflow-release-1-0-1",
+            )
+            subprocess.run(
+                [str(existing_worktree / ".workflow-kit" / "new_exec.sh"), "--no-sync"],
+                cwd=existing_worktree,
+                check=True,
+                capture_output=True,
+                text=True,
+                env={"WORKFLOW_GUARD_ACTIVE": "1", **os.environ},
+            )
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(workflow_root / "scripts" / "apply_downstreams.py"),
+                    "--repo-id",
+                    "OnlyRepo",
+                    "--resume-existing-worktree",
+                ],
+                cwd=workflow_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode)
+            payload = json.loads(result.stdout)
+            self.assertEqual(1, payload["processed_repo_count"])
+            self.assertEqual("OnlyRepo", payload["repositories"][0]["repo_id"])
+            self.assertTrue(payload["repositories"][0]["resumed_existing_worktree"])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,23 @@
+[1020] feat(workflow): add downstream recovery and snapshot guard
+
+# Changes
+# - add targeted downstream fan-out recovery via --repo-id and --resume-existing-worktree
+# - add a full SKIP_POST_COMMIT_AUTOMATION bypass for exceptional local commit flows
+# - require structured test/review records with staged snapshot binding before code commits
+# - publish workflow release 1.0.21 with refreshed runtime/templates and docs
+
+# Tests
+# - 命令：python3 scripts/export_templates.py --repo-id AgentWorkflowKit; python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.21; python3 -m py_compile .workflow-kit/exec_record_hygiene.py scripts/workflow_kit_lib.py scripts/apply_downstreams.py tests/test_workflow_release.py; bash -n .githooks/post-commit .workflow-kit/prepare_commit.sh .workflow-kit/new_exec.sh; python3 -m unittest tests.test_workflow_release; git diff --check
+# - 范围：中央 workflow runtime、downstream apply/recovery 入口、exec record 提交流程校验、模板导出与发布产物
+# - 结果：全部通过；tests.test_workflow_release 共 31 个用例通过
+# - 未覆盖项：未在真实失败下游仓库上再次演练 --resume-existing-worktree 的端到端恢复；依赖现有单测覆盖恢复路径
+# - 提交快照：562193eea2215f8931157ce4130d66155563a4e536039b73ec4d8e13db755287
+
+# Review
+# - 审查方式：人工审查 git diff --stat 与关键文件 diff，重点检查 downstream worktree 复用、post-commit 跳过开关、staged snapshot 递归问题和模板同步结果
+# - 结论：实现与需求一致，未发现需要额外修正的问题
+# - 残余风险：恢复 worktree 中若并存多个 placeholder exec record，当前会复用最新一条占位记录
+# - 提交快照：562193eea2215f8931157ce4130d66155563a4e536039b73ec4d8e13db755287
+
+# Risks
+# - resume-existing-worktree 仍依赖本地恢复 worktree 处于可接管状态；极端脏状态仍可能需要人工处理

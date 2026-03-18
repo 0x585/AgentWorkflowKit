@@ -16,6 +16,11 @@ ROOT="$(git rev-parse --show-toplevel)"
 DEFAULT_BRANCH="$("$ROOT/.workflow-kit/git_default_branch.sh" "$ROOT")"
 CURRENT_BRANCH="$(git branch --show-current || true)"
 
+if [[ "${SKIP_POST_COMMIT_AUTOMATION:-0}" == "1" ]]; then
+  echo "[post-commit] Post-commit automation skipped by SKIP_POST_COMMIT_AUTOMATION=1"
+  exit 0
+fi
+
 if [[ -z "$CURRENT_BRANCH" ]]; then
   exit 0
 fi

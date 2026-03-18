@@ -220,11 +220,18 @@ TODO
 
 ## 验证结果
 
-- TODO
+- 命令：TODO
+- 范围：TODO
+- 结果：TODO
+- 未覆盖项：TODO
+- 提交快照：TODO
 
 ## 审查结果
 
-- TODO
+- 审查方式：TODO
+- 结论：TODO
+- 残余风险：TODO
+- 提交快照：TODO
 
 ## 完成待办项
 
@@ -246,10 +253,17 @@ cat <<EOF2 > "$commit_template_file"
 # - TODO
 
 # Tests
-# - TODO
+# - 命令：TODO
+# - 范围：TODO
+# - 结果：TODO
+# - 未覆盖项：TODO
+# - 提交快照：TODO
 
 # Review
-# - TODO
+# - 审查方式：TODO
+# - 结论：TODO
+# - 残余风险：TODO
+# - 提交快照：TODO
 
 # Risks
 # - TODO
