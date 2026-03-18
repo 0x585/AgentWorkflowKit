@@ -47,6 +47,46 @@ if [[ -z "$WORKFLOW_ROOT" || ! -d "$WORKFLOW_ROOT" ]]; then
   exit 1
 fi
 
+REPO_META="$(
+  "$PYTHON_BIN" - "$SOURCE_JSON" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+for key in ("expected_workspace_root", "default_branch", "repo_id"):
+    value = payload.get(key)
+    print("" if value is None else str(value))
+PY
+)"
+EXPECTED_WORKSPACE_ROOT=""
+DEFAULT_BRANCH=""
+REPO_ID=""
+while IFS= read -r line; do
+  if [[ -z "$EXPECTED_WORKSPACE_ROOT" ]]; then
+    EXPECTED_WORKSPACE_ROOT="$line"
+    continue
+  fi
+  if [[ -z "$DEFAULT_BRANCH" ]]; then
+    DEFAULT_BRANCH="$line"
+    continue
+  fi
+  REPO_ID="$line"
+  break
+done <<EOF
+$REPO_META
+EOF
+if [[ -z "$DEFAULT_BRANCH" ]]; then
+  DEFAULT_BRANCH="main"
+fi
+CURRENT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || true)"
+AUTO_APPLY_BLOCK_REASON=""
+if [[ -n "$EXPECTED_WORKSPACE_ROOT" && "$ROOT" == "$EXPECTED_WORKSPACE_ROOT" ]]; then
+  AUTO_APPLY_BLOCK_REASON="primary workspace"
+elif [[ -n "$CURRENT_BRANCH" && -n "$DEFAULT_BRANCH" && "$CURRENT_BRANCH" == "$DEFAULT_BRANCH" ]]; then
+  AUTO_APPLY_BLOCK_REASON="default branch (${DEFAULT_BRANCH})"
+fi
+
 ENTRY_ABS="$(
   "$PYTHON_BIN" - "$ROOT" "$ENTRY_SCRIPT" <<'PY'
 import sys
@@ -88,6 +128,16 @@ case "$CHECK_STATUS" in
     exit "$ENTRY_STATUS"
     ;;
   10)
+    if [[ -n "$AUTO_APPLY_BLOCK_REASON" ]]; then
+      echo "[workflow-guard] Entry script failed (exit=${ENTRY_STATUS}); installed release is outdated, but auto-apply is disabled on ${AUTO_APPLY_BLOCK_REASON}." >&2
+      if [[ -n "$REPO_ID" ]]; then
+        echo "[workflow-guard] Apply the published release from the workflow source repo instead:" >&2
+        echo "[workflow-guard]   python3 \"$WORKFLOW_ROOT/scripts/apply_release.py\" --repo-root \"$ROOT\" --repo-id \"$REPO_ID\"" >&2
+      else
+        echo "[workflow-guard] Apply the published release from the workflow source repo or switch to a codex/* worktree before retrying." >&2
+      fi
+      exit "$ENTRY_STATUS"
+    fi
     echo "[workflow-guard] Entry script failed (exit=${ENTRY_STATUS}); installed release is outdated. Applying latest release and retrying..." >&2
     "$PYTHON_BIN" "$APPLY_SCRIPT" --repo-root "$ROOT"
     exec env WORKFLOW_GUARD_ACTIVE=1 "$ENTRY_ABS" "$@"

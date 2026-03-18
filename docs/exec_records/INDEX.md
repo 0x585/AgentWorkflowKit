@@ -2,6 +2,7 @@
 
 | ID | Date | Summary |
 |---|---|---|
+| 1019 | 2026-03-18 | fix(workflow): block auto-apply on primary and default-branch workspaces |
 | 1018 | 2026-03-17 | feat(workflow): enforce test-review-release order |
 | 1016 | 2026-03-15 | TODO |
 | 1015 | 2026-03-13 | TODO |

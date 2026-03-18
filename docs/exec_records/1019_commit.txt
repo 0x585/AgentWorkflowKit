@@ -1,0 +1,20 @@
+[1019] fix(workflow): block auto-apply on protected workspaces
+
+# Changes
+# - block workflow_guard from auto-applying published releases when the current workspace is the downstream primary checkout or default branch
+# - keep codex/* worktree auto-upgrade-and-retry behavior intact
+# - publish workflow release 1.0.19 and refresh the downstream runtime template
+
+# Tests
+# - python3 -m pytest tests/test_workflow_release.py -k 'workflow_guard'
+# - python3 -m pytest tests/test_workflow_release.py
+# - python3 scripts/export_templates.py --repo-id AgentWorkflowKit
+# - python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.19
+# - git diff --check
+
+# Review
+# - reviewed workflow_guard branch/root protection logic, generated template parity, and the new/updated workflow_guard regression coverage
+# - no additional findings
+
+# Risks
+# - operators who previously relied on implicit auto-upgrade from primary/main now need to apply from the central repo or move into a codex/* worktree first

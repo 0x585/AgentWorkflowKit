@@ -194,6 +194,12 @@ python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/AgentTask 
 
 下游仓库的受管入口现在默认优先直接执行本地脚本，不会在每次调用前都回中央仓库做版本核对。只有入口执行失败时，`workflow_guard` 才会补做版本检查；如果发现只是版本落后，会自动应用最新已发布 release 并重试一次。
 
+新增边界：
+
+- 自动 apply 只允许发生在 `codex/*` worktree 这类非默认分支工作区
+- 如果当前位于子仓 primary checkout 或默认分支（例如 `main`），`workflow_guard` 会直接报错并提示改走中央仓库的 `scripts/apply_release.py` 或先切到 `codex/*` 工作区
+- 这样做的目的，是避免一次“失败后自动升级”把子仓默认分支直接改脏
+
 ## 5. 中央仓库提交后的自动行为
 
 中央仓库代码任务的默认自动顺序现在是：
