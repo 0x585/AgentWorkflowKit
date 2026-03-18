@@ -7,7 +7,7 @@
 - Managed hooks live under `.githooks/`.
 - For code changes, finish and record `test -> review -> commit` before relying on auto-push / auto-release.
 - Pre-commit close-up entrypoint: `./.workflow-kit/prepare_commit.sh` (use `--stage` for an explicit `git add -A` before commit).
-- Exec records under `docs/exec_records/` must include `验证结果` and `审查结果` before code commits can pass `commit-msg`.
+- Exec records under `docs/exec_records/` must include structured `验证结果` / `审查结果`, and both `提交快照` fields must match the final staged snapshot before code commits can pass `commit-msg`.
 - Legacy managed workflow entrypoints and workflow `scripts/*` wrappers are removed during release apply; project-owned scripts should call `.workflow-kit/*` directly.
 - This repository must not locally customize managed git workflow files.
 - Keep centrally managed workflow guidance in this fixed block; keep project-specific architecture and domain docs in the rest of the README.

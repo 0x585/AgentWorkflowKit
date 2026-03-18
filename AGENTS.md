@@ -63,6 +63,7 @@ python3 scripts/publish_release.py --profile full_codex_flow --version <new-vers
 - `scripts/apply_downstreams.py` now creates downstream local commits in child-repo worktrees; it does not push or auto-release those downstream commits.
 - 中央仓库的 downstream apply 顺序固定为：`测试 -> 审查 -> commit -> push/auto-release -> apply_downstreams.py`。
 - `commit-msg` 会在代码提交时校验 exec record；若 `docs/exec_records/<exec_id>.md` 未完成 `验证结果` / `审查结果`，提交会被阻断。
+- `scripts/apply_downstreams.py` 现在支持 `--repo-id <RepoId>` 与 `--resume-existing-worktree`，用于单仓恢复失败的 fan-out worktree。
 - `session_push_autorelease.sh` 会在 `<default-branch>` push 成功后再执行 `python3 scripts/apply_downstreams.py`，避免在 auto-release 前提早 fan-out。
 - 为兼容旧版下游 runtime，中央 downstream apply 在调用子仓 `new_worktree.sh` 时会临时设置 `SKIP_SHARED_VENV_LINK=1`；待当前 release 应用完成后，再由新 runtime 补做共享 `.venv` 修复。
 - 下游 `AGENTS.md` 中散落的通用 workflow 章节会在 apply 时刷洗并收束到固定 managed block；块外应只保留仓库特有规则。
@@ -83,6 +84,9 @@ git commit -m "[<exec_id>] <type>(<scope>): <summary>"
 
 - 代码修改后的默认顺序固定为：测试 -> 审查 -> `./.workflow-kit/prepare_commit.sh` -> `git commit` -> `git push` / auto-release -> downstream apply。
 - `docs/exec_records/<exec_id>.md` 必须先记录测试结果与审查结论，再提交代码；`commit-msg` 会据此阻断未完成的代码提交。
+- `验证结果` 必须至少填写：`命令`、`范围`、`结果`、`未覆盖项`、`提交快照`。
+- `审查结果` 必须至少填写：`审查方式`、`结论`、`残余风险`、`提交快照`。
+- 最终 staging 后，用 `./.workflow-kit/prepare_commit.sh` 查看当前 `Staged snapshot`，或运行 `python3 ./.workflow-kit/exec_record_hygiene.py --sync-staged-snapshot --exec-id <exec_id>` 回填两个 `提交快照` 字段。
 - 如果 `prepare_commit.sh` 报告存在未收口变更，先处理后再提交；确认本次要全量纳入提交时，使用 `./.workflow-kit/prepare_commit.sh --stage`。
 - `.githooks/post-commit` auto-runs `git push` for `codex/*` branches by default。
 - Downstream apply creates local child-repo commits only; any resulting downstream worktree still requires later push/release handling in that child repo.
@@ -93,6 +97,7 @@ git commit -m "[<exec_id>] <type>(<scope>): <summary>"
 - If auto-release reports `behind/diverged`, run `./.workflow-kit/session_sync.sh <default-branch>` first, then retry push/release.
 - If you need to skip downstream auto-apply after release (special cases only), use `SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT=1 git commit ...`.
 - If you need to commit without auto push (special cases only), use `SKIP_AUTO_PUSH_AFTER_COMMIT=1 git commit ...`.
+- If you need to skip every `post-commit` automation step (special cases only), use `SKIP_POST_COMMIT_AUTOMATION=1 git commit ...`.
 - No second confirmation is required.
 - If merge conflicts occur, conflict context is kept and resumed via `./.workflow-kit/session_release_resume.sh`.
 - Auto-release success means this task worktree is removed; for next task create/switch to a new `codex/*` worktree first.
@@ -137,17 +142,18 @@ Additional rules (enforced by the guard script):
 ## Managed Workflow Contract
 
 - Profile: `full_codex_flow`
-- Workflow version: `1.0.17`
+- Workflow version: `1.0.21`
 - Workflow source metadata: `.workflow-kit/source.json`
 - Canonical managed runtime entrypoints live under `.workflow-kit/`.
 - Before substantive work, run the repository workflow guard entrypoint: `./.workflow-kit/assert_workspace.sh`.
 - For code changes, complete and record `test -> review -> commit`; keep `docs/exec_records/<exec_id>.md` updated before committing.
+- For code changes, bind `验证结果` / `审查结果` to the final staged content by refreshing both `提交快照` fields after the last staging pass.
 - Before `git commit`, run `./.workflow-kit/prepare_commit.sh`; if this commit should include every current change, use `./.workflow-kit/prepare_commit.sh --stage`.
 - Managed git hooks live under `.githooks/`; keep `core.hooksPath=.githooks`.
 - Legacy managed workflow entrypoints and workflow `scripts/*` wrappers are removed during release apply; project-owned callers should invoke `.workflow-kit/*` directly.
 - Code edits belong on `codex/*` managed worktrees rather than the default-branch primary checkout.
 - Commit messages use `[<exec_id>] <type>(<scope>): <summary>`; if this repository enables auto-push/auto-release hooks, `git commit` may trigger them.
-- Managed `commit-msg` blocks code commits until the exec record has completed `验证结果` and `审查结果`.
+- Managed `commit-msg` blocks code commits until the exec record has completed the structured `验证结果` / `审查结果` fields and both `提交快照` values match the final staged snapshot.
 - Managed `pre-commit` blocks commits when unstaged tracked changes or untracked files remain; `SKIP_PREPARE_COMMIT_GUARD=1` bypasses only this readiness check.
 - Do not manually edit managed workflow files in this repository.
 - Repo-specific differences must be implemented through the central manifest, not by local customization.

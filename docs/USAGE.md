@@ -117,9 +117,15 @@
 
 - `docs/exec_records/<exec_id>.md` 现在必须记录代码任务的 `验证结果` 和 `审查结果`
 - `commit-msg` 会在代码提交时校验对应 exec record；未完成 `验证结果` / `审查结果` 的代码提交会被阻断
+- `验证结果` 固定至少包含：`命令`、`范围`、`结果`、`未覆盖项`、`提交快照`
+- `审查结果` 固定至少包含：`审查方式`、`结论`、`残余风险`、`提交快照`
+- 最终 staging 后，`验证结果` / `审查结果` 里的两个 `提交快照` 必须和当前 staged snapshot 一致；如果测试或审查后又改了代码，必须重刷快照并重新确认
 - docs-only 提交仍然需要 exec record，但不会被这条“测试 / 审查”校验阻断
 - `prepare_commit.sh` 只负责收口，不替代测试或审查记录
+- `./.workflow-kit/prepare_commit.sh` 会输出当前 `Staged snapshot`
+- 也可以直接运行 `python3 ./.workflow-kit/exec_record_hygiene.py --sync-staged-snapshot --exec-id <exec_id>` 自动刷新两个 `提交快照` 字段
 - `post-commit` 只负责自动 push 当前 `codex/*` 分支；downstream apply 改为在 auto-release 成功 push 默认分支后执行
+- 如需完全跳过 `post-commit` 自动化，使用 `SKIP_POST_COMMIT_AUTOMATION=1 git commit ...`
 
 ### 4.2 导出模板
 
@@ -177,6 +183,8 @@ python3 scripts/apply_downstreams.py
 - 如果子仓库缺失 `.workflow-kit/new_worktree.sh`，该子仓会直接失败并返回错误
 - 为兼容仍在旧 runtime 上的子仓库，中央 fan-out 创建 worktree 时会先临时跳过共享 `.venv` 链接，待新 release 应用完成后再补做修复
 - 这些下游提交默认只保留在本地，不会自动 push 或 auto-release；命令输出会返回 worktree 路径、分支名与 commit sha
+- 如果只想重跑某个失败子仓库，可以用 `python3 scripts/apply_downstreams.py --repo-id <RepoId>`
+- 如果该子仓库已经存在未完成的 `workflow-release-*` worktree，可再加 `--resume-existing-worktree` 继续使用原 worktree 恢复 fan-out
 - 如果某个子仓库失败，其他子仓库仍会继续处理，但最终命令会返回非零退出码
 
 ### 4.6 校验仓库状态
@@ -224,6 +232,12 @@ python3 scripts/apply_downstreams.py
 
 ```bash
 SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT=1 git commit ...
+```
+
+如果你需要跳过当前仓库的全部 `post-commit` 自动化，可以使用：
+
+```bash
+SKIP_POST_COMMIT_AUTOMATION=1 git commit ...
 ```
 
 ## 6. 如何新增一个子应用

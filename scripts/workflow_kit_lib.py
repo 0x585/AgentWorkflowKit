@@ -924,6 +924,45 @@ def _parse_new_worktree_output(output: str) -> tuple[str, Path, str]:
     return branch_match.group(1).strip(), Path(path_match.group(1).strip()), exec_match.group(1).strip()
 
 
+def _find_worktree_for_branch(primary_repo_root: Path, branch: str) -> Path | None:
+    output = _git_output(primary_repo_root, "worktree", "list", "--porcelain")
+    worktree_path: Path | None = None
+    current_branch = ""
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if worktree_path is not None and current_branch == f"refs/heads/{branch}":
+                return worktree_path
+            worktree_path = None
+            current_branch = ""
+            continue
+        if line.startswith("worktree "):
+            worktree_path = Path(line.split(" ", 1)[1].strip())
+        elif line.startswith("branch "):
+            current_branch = line.split(" ", 1)[1].strip()
+    if worktree_path is not None and current_branch == f"refs/heads/{branch}":
+        return worktree_path
+    return None
+
+
+def _discover_resume_exec_id(worktree_root: Path) -> str | None:
+    index_path = worktree_root / "docs" / "exec_records" / "INDEX.md"
+    if not index_path.is_file():
+        return None
+    placeholder_ids: list[int] = []
+    pattern = re.compile(r"^\|\s*([0-9]{4,})\s*\|\s*[0-9]{4}-[0-9]{2}-[0-9]{2}\s*\|\s*TODO\s*\|")
+    for raw_line in index_path.read_text(encoding="utf-8").splitlines():
+        match = pattern.match(raw_line.strip())
+        if match is None:
+            continue
+        exec_id = int(match.group(1))
+        record_path = worktree_root / "docs" / "exec_records" / f"{exec_id}.md"
+        commit_template_path = worktree_root / "docs" / "exec_records" / f"{exec_id}_commit.txt"
+        if record_path.is_file() and commit_template_path.is_file():
+            placeholder_ids.append(exec_id)
+    return str(max(placeholder_ids)) if placeholder_ids else None
+
+
 def _cleanup_worktree(primary_repo_root: Path, worktree_root: Path, branch: str) -> None:
     errors: list[str] = []
     if worktree_root.exists():
@@ -978,9 +1017,16 @@ def _write_downstream_exec_record(
             f"- 通过受管 worktree 提交流程下推 `{profile}@{workflow_version}`。\n"
             "- 保留 worktree 供后续人工检查、push 或 release。\n\n"
             "## 验证结果\n\n"
-            "- 未自动执行测试；仅验证受管文件已生成本地提交。\n\n"
+            "- 命令：未自动执行（downstream local commit only）\n"
+            "- 范围：受管 workflow 文件\n"
+            "- 结果：仅验证已生成本地 downstream commit\n"
+            "- 未覆盖项：未在 child repo 自动运行项目测试\n"
+            "- 提交快照：自动化 downstream commit\n\n"
             "## 审查结果\n\n"
-            "- 本次提交由中央 downstream apply 自动生成，保留 worktree 供后续人工复核。\n\n"
+            "- 审查方式：中央 downstream apply 自动生成，待子仓人工复核\n"
+            "- 结论：已生成本地 commit，待后续人工 push/release\n"
+            "- 残余风险：child repo 尚未完成人工校验\n"
+            "- 提交快照：自动化 downstream commit\n\n"
             "## 完成待办项\n\n"
             "- 无\n\n"
             "## 当前占用待办项\n\n"
@@ -999,9 +1045,16 @@ def _write_downstream_exec_record(
             f"# - apply {profile}@{workflow_version} into downstream repo {repo_id}\n"
             "# - keep the resulting worktree local for later push/release\n\n"
             "# Tests\n"
-            "# - not run (local downstream commit only)\n\n"
+            "# - 命令：未自动执行（downstream local commit only）\n"
+            "# - 范围：受管 workflow 文件\n"
+            "# - 结果：仅验证已生成本地 downstream commit\n"
+            "# - 未覆盖项：未在 child repo 自动运行项目测试\n"
+            "# - 提交快照：自动化 downstream commit\n\n"
             "# Review\n"
-            "# - local downstream fan-out commit; review in child repo before push/release\n\n"
+            "# - 审查方式：中央 downstream apply 自动生成，待子仓人工复核\n"
+            "# - 结论：已生成本地 commit，待后续人工 push/release\n"
+            "# - 残余风险：child repo 尚未完成人工校验\n"
+            "# - 提交快照：自动化 downstream commit\n\n"
             "# Risks\n"
             "# - downstream worktree remains local and still needs manual push/release\n"
         ),
@@ -1014,6 +1067,7 @@ def submit_release_to_repo_via_worktree_commit(
     repo_root: Path,
     repo_id: str | None = None,
     profile: str = DEFAULT_PROFILE,
+    resume_existing_worktree: bool = False,
 ) -> dict[str, Any]:
     resolved_repo_root = repo_root.expanduser().resolve()
     summary: dict[str, Any] = {
@@ -1032,6 +1086,7 @@ def submit_release_to_repo_via_worktree_commit(
         "commit_message": None,
         "changed_paths": [],
         "error": None,
+        "resumed_existing_worktree": False,
     }
 
     try:
@@ -1061,6 +1116,7 @@ def submit_release_to_repo_via_worktree_commit(
 
         repo_config = load_repo_config(workflow_root, resolved_repo_id)
         default_branch = str(repo_config["default_branch"])
+        branch = f"codex/{_downstream_issue_slug(workflow_version)}"
         worktree_env = {
             **os.environ,
             "WORKFLOW_GUARD_ACTIVE": "1",
@@ -1073,20 +1129,32 @@ def submit_release_to_repo_via_worktree_commit(
         if not script_path.is_file():
             raise FileNotFoundError(f"downstream worktree script not found: {script_path}")
 
-        issue_slug = _downstream_issue_slug(workflow_version)
-        worktree_process = _run_command(
-            [str(script_path), issue_slug],
-            cwd=resolved_repo_root,
-            env=worktree_env,
-        )
-        branch, worktree_root, exec_id = _parse_new_worktree_output(
-            _command_output_summary(worktree_process) or worktree_process.stdout
-        )
+        worktree_root: Path
+        exec_id: str
+        reused_existing_worktree = False
+        existing_worktree_root = _find_worktree_for_branch(resolved_repo_root, branch) if resume_existing_worktree else None
+        if existing_worktree_root is not None:
+            worktree_root = existing_worktree_root
+            exec_id = _discover_resume_exec_id(worktree_root) or ""
+            if not exec_id:
+                raise RuntimeError(f"resume requested but no placeholder exec record found: {worktree_root}")
+            reused_existing_worktree = True
+        else:
+            issue_slug = _downstream_issue_slug(workflow_version)
+            worktree_process = _run_command(
+                [str(script_path), issue_slug],
+                cwd=resolved_repo_root,
+                env=worktree_env,
+            )
+            branch, worktree_root, exec_id = _parse_new_worktree_output(
+                _command_output_summary(worktree_process) or worktree_process.stdout
+            )
         summary.update(
             {
                 "worktree_path": str(worktree_root),
                 "branch": branch,
                 "exec_id": exec_id,
+                "resumed_existing_worktree": reused_existing_worktree,
             }
         )
 
@@ -1105,7 +1173,7 @@ def submit_release_to_repo_via_worktree_commit(
                 env={**os.environ, "WORKFLOW_GUARD_ACTIVE": "1"},
             )
         after_paths = set(_git_status_paths(worktree_root))
-        managed_release_paths = sorted(after_paths - baseline_paths)
+        managed_release_paths = sorted(after_paths if reused_existing_worktree else after_paths - baseline_paths)
         if not managed_release_paths:
             _cleanup_worktree(resolved_repo_root, worktree_root, branch)
             summary["action"] = "noop-cleanup"
@@ -1128,6 +1196,7 @@ def submit_release_to_repo_via_worktree_commit(
             "WORKFLOW_GUARD_ACTIVE": "1",
             "SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT": "1",
             "SKIP_AUTO_PUSH_AFTER_COMMIT": "1",
+            "SKIP_POST_COMMIT_AUTOMATION": "1",
             "PYTHONDONTWRITEBYTECODE": "1",
         }
         _run_command(["git", "-C", str(worktree_root), "add", "-A"], env=commit_env)
