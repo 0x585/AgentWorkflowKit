@@ -549,6 +549,14 @@ exec "$ROOT/.workflow-kit/new_branch.sh" "$@"
             ).read_text(encoding="utf-8")
             self.assertIn("{{ python_package_name }}", register_sync_template)
             self.assertNotIn("agent_workflow_kit.tooling.service", register_sync_template)
+            self.assertIn(
+                'PACKAGE_ROOT = REPO_ROOT / "src" / "main" / "python" / "{{ python_package_name }}"',
+                register_sync_template,
+            )
+            self.assertNotIn(
+                'PACKAGE_ROOT = REPO_ROOT / "src" / "main" / "python" / "agent_workflow_kit"',
+                register_sync_template,
+            )
 
             prepare_commit_template = (
                 workflow_root / "templates" / "full_codex_flow" / "files" / ".workflow-kit" / "prepare_commit.sh.tmpl"

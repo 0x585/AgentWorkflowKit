@@ -1,0 +1,22 @@
+[1023] fix(workflow): preserve package root placeholder in register templates
+
+# Changes
+# - restore PACKAGE_ROOT placeholderization for public_work_register templates
+# - publish full_codex_flow@1.0.23
+# - document python_package_name expansion rule and add regression coverage
+
+# Tests
+# - 命令：ASSERT_PURPOSE=code ./.workflow-kit/assert_workspace.sh; python3 scripts/export_templates.py --repo-id AgentWorkflowKit; python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.23; python3 -m pytest tests/test_workflow_release.py
+# - 范围：模板导出、release 工件、workflow release/apply 全链路
+# - 结果：通过
+# - 未覆盖项：未在提交前完成下游仓库 push/release，仅验证中央仓发版
+# - 提交快照：05223bfb879e8bc995627d203583aff08b1a9d003a8621c08125603afd14aeb6
+
+# Review
+# - 审查方式：git diff --stat + 模板 grep + release 版本复核
+# - 结论：通过
+# - 残余风险：下游仓库需应用 1.0.23 才会消除既有错误兼容目录
+# - 提交快照：05223bfb879e8bc995627d203583aff08b1a9d003a8621c08125603afd14aeb6
+
+# Risks
+# - downstream verification still required after central auto-release fan-out
