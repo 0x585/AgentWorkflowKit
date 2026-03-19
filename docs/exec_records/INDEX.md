@@ -2,6 +2,7 @@
 
 | ID | Date | Summary |
 |---|---|---|
+| 1022 | 2026-03-20 | TODO |
 | 1020 | 2026-03-18 | feat(workflow): add downstream recovery and snapshot guard |
 | 1019 | 2026-03-18 | fix(workflow): block auto-apply on primary and default-branch workspaces |
 | 1018 | 2026-03-17 | feat(workflow): enforce test-review-release order |

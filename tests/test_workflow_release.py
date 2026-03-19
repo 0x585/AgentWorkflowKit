@@ -15,6 +15,7 @@ from scripts.workflow_kit_lib import (
     apply_rendered_entries,
     build_lock_manifest,
     check_repo_release,
+    extract_block,
     export_runtime_templates,
     inject_block,
     load_json,
@@ -302,6 +303,8 @@ class WorkflowReleaseTest(unittest.TestCase):
         transit_assert = next(entry for entry in transit_entries if entry["path"] == ".workflow-kit/assert_workspace.sh")
         task_agents = next(entry for entry in task_entries if entry["path"] == "AGENTS.md")
         task_readme = next(entry for entry in task_entries if entry["path"] == "README.md")
+        task_contract = next(entry for entry in task_entries if entry["path"] == ".workflow-kit/WORKFLOW_CONTRACT.md")
+        transit_contract = next(entry for entry in transit_entries if entry["path"] == ".workflow-kit/WORKFLOW_CONTRACT.md")
         task_service = next(
             entry
             for entry in task_entries
@@ -319,6 +322,9 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.assertNotIn("/Users/pi/PyCharmProject/AgentWorkflowKit", task_agents["content"])
         self.assertNotIn("AgentWorkflowKit", task_readme["content"])
         self.assertNotIn("/Users/pi/PyCharmProject/AgentWorkflowKit", task_readme["content"])
+        self.assertEqual(task_contract["content"], transit_contract["content"])
+        self.assertIn("## Required Flow", task_contract["content"])
+        self.assertNotIn("/Users/pi/PyCharmProject/AgentWorkflowKit", task_contract["content"])
         self.assertIn("AGENT_TASK_PUBLIC_WORK_REGISTER_ROOT", task_service["content"])
         self.assertIn("AGENT_TRANSIT_STATION_PUBLIC_WORK_REGISTER_ROOT", transit_service["content"])
         self.assertNotEqual(task_service["path"], transit_service["path"])
@@ -356,6 +362,8 @@ class WorkflowReleaseTest(unittest.TestCase):
         transit_paths = {entry["path"] for entry in lock_payload["repositories"]["AgentTransitStation"]["entries"]}
         self.assertIn(".workflow-kit/new_exec.sh", task_paths)
         self.assertIn(".workflow-kit/new_exec.sh", transit_paths)
+        self.assertIn(".workflow-kit/WORKFLOW_CONTRACT.md", task_paths)
+        self.assertIn(".workflow-kit/WORKFLOW_CONTRACT.md", transit_paths)
         self.assertIn(".workflow-kit/ensure_shared_venv.sh", task_paths)
         self.assertIn(".workflow-kit/ensure_shared_venv.sh", transit_paths)
         self.assertIn(".workflow-kit/prepare_commit.sh", task_paths)
@@ -562,6 +570,18 @@ exec "$ROOT/.workflow-kit/new_branch.sh" "$@"
             ).read_text(encoding="utf-8")
             self.assertIn("--check-commit-flow", commit_msg_template)
 
+            contract_template = (
+                workflow_root
+                / "templates"
+                / "full_codex_flow"
+                / "files"
+                / ".workflow-kit"
+                / "WORKFLOW_CONTRACT.md.tmpl"
+            ).read_text(encoding="utf-8")
+            self.assertIn("- Profile: `{{ profile }}`", contract_template)
+            self.assertIn("- Workflow version: `{{ workflow_version }}`", contract_template)
+            self.assertNotIn("- Workflow version: `1.0.21`", contract_template)
+
             post_commit_template = (
                 workflow_root / "templates" / "full_codex_flow" / "files" / ".githooks" / "post-commit.tmpl"
             ).read_text(encoding="utf-8")
@@ -642,12 +662,34 @@ Run `./scripts/new_exec.sh`.
             )
 
             agents_text = (repo_root / "AGENTS.md").read_text(encoding="utf-8")
+            readme_text = (repo_root / "README.md").read_text(encoding="utf-8")
+            contract_text = (repo_root / ".workflow-kit" / "WORKFLOW_CONTRACT.md").read_text(encoding="utf-8")
+            agents_block = extract_block(
+                agents_text,
+                "<!-- workflow-kit:agents:start -->",
+                "<!-- workflow-kit:agents:end -->",
+            )
+            readme_block = extract_block(
+                readme_text,
+                "<!-- workflow-kit:readme:start -->",
+                "<!-- workflow-kit:readme:end -->",
+            )
             self.assertNotIn("## Workspace Guard (Mandatory)", agents_text)
             self.assertNotIn("## Recommended Workflow", agents_text)
             self.assertIn("## Documentation Routing (Mandatory)", agents_text)
             self.assertIn("<!-- workflow-kit:agents:start -->", agents_text)
             self.assertIn("<!-- workflow-kit:agents:end -->", agents_text)
             self.assertIn("## Managed Workflow Contract", agents_text)
+            self.assertIsNotNone(agents_block)
+            self.assertIsNotNone(readme_block)
+            self.assertIn("Full workflow rules: `./.workflow-kit/WORKFLOW_CONTRACT.md`.", str(agents_block))
+            self.assertIn("Full workflow rules: `./.workflow-kit/WORKFLOW_CONTRACT.md`.", str(readme_block))
+            self.assertLessEqual(len(str(agents_block).splitlines()), 6)
+            self.assertLessEqual(len(str(readme_block).splitlines()), 5)
+            self.assertNotIn("Workflow version", str(agents_block))
+            self.assertNotIn("prepare_commit", str(readme_block))
+            self.assertIn("## Overview", contract_text)
+            self.assertIn("## Troubleshooting Pointers", contract_text)
 
     def test_ensure_shared_venv_links_primary_virtualenv_into_worktree(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -793,6 +835,118 @@ Run `./scripts/new_exec.sh`.
             target_script.write_text(target_script.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
             drift = check_repo_release(repo_root=repo_root, workflow_root=workflow_root, repo_id="TempRepo")
             self.assertEqual("drift", drift["status"])
+
+    def test_apply_release_and_check_release_report_doc_redundancy_warnings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            repo_root.mkdir(parents=True)
+            self.init_git_repo(repo_root)
+            self.write_repo_docs(repo_root)
+            (repo_root / "README.md").write_text(
+                textwrap.dedent(
+                    """\
+                    # Temp Repo
+
+                    Before coding, run `./.workflow-kit/assert_workspace.sh`.
+                    Keep work on `codex/*`.
+                    Close commits with `./.workflow-kit/prepare_commit.sh`.
+                    """
+                ),
+                encoding="utf-8",
+            )
+            (repo_root / "AGENTS.md").write_text(
+                textwrap.dedent(
+                    """\
+                    # AGENTS
+
+                    Legacy managed workflow entrypoints and workflow `scripts/*` wrappers are removed during release apply; project-owned callers should invoke `.workflow-kit/*` directly.
+                    """
+                ),
+                encoding="utf-8",
+            )
+            self.write_temp_repo_config(workflow_root, repo_root)
+            self.publish_temp_release(workflow_root, "1.0.0")
+
+            apply_result = subprocess.run(
+                [
+                    "python3",
+                    str(workflow_root / "scripts" / "apply_release.py"),
+                    "--repo-root",
+                    str(repo_root),
+                    "--repo-id",
+                    "TempRepo",
+                ],
+                cwd=workflow_root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            apply_summary = json.loads(apply_result.stdout)
+            apply_warnings = {entry["file"]: entry for entry in apply_summary["doc_redundancy_warnings"]}
+            self.assertEqual({"README.md", "AGENTS.md"}, set(apply_warnings))
+            self.assertEqual(
+                ["assert_workspace", "codex_worktree", "prepare_commit"],
+                apply_warnings["README.md"]["matched_topics"],
+            )
+            self.assertEqual(
+                ["managed_workflow_entrypoints"],
+                apply_warnings["AGENTS.md"]["matched_topics"],
+            )
+
+            check_result = subprocess.run(
+                [
+                    "python3",
+                    str(workflow_root / "scripts" / "check_release.py"),
+                    "--repo-root",
+                    str(repo_root),
+                    "--repo-id",
+                    "TempRepo",
+                    "--json",
+                ],
+                cwd=workflow_root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            check_summary = json.loads(check_result.stdout)
+            self.assertEqual("current", check_summary["status"])
+            self.assertEqual(apply_summary["doc_redundancy_warnings"], check_summary["doc_redundancy_warnings"])
+
+    def test_apply_release_and_check_release_skip_doc_redundancy_warnings_for_repo_specific_docs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            repo_root.mkdir(parents=True)
+            self.init_git_repo(repo_root)
+            self.write_repo_docs(repo_root)
+            (repo_root / "README.md").write_text(
+                "# Temp Repo\n\nThis repository owns the billing ingestion pipeline.\n",
+                encoding="utf-8",
+            )
+            (repo_root / "AGENTS.md").write_text(
+                "# AGENTS\n\n## Local Notes\n\n- Keep domain runbooks current.\n",
+                encoding="utf-8",
+            )
+            self.write_temp_repo_config(workflow_root, repo_root)
+            self.publish_temp_release(workflow_root, "1.0.0")
+
+            apply_summary = apply_release_to_repo(
+                workflow_root=workflow_root,
+                repo_root=repo_root,
+                repo_id="TempRepo",
+            )
+            self.assertEqual([], apply_summary["doc_redundancy_warnings"])
+
+            check_summary = check_repo_release(repo_root=repo_root, workflow_root=workflow_root, repo_id="TempRepo")
+            self.assertEqual("current", check_summary["status"])
+            self.assertEqual([], check_summary["doc_redundancy_warnings"])
 
     def test_git_default_branch_prefers_repo_default_branch_over_stale_origin_head(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

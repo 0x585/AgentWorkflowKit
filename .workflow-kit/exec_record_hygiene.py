@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Managed by AgentWorkflowKit
-# Workflow-Version: 1.0.17
+# Workflow-Version: 1.0.22
 # Do not edit in this repository.
 # Source profile/file id: .workflow-kit/exec_record_hygiene.py
 from __future__ import annotations

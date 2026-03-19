@@ -35,6 +35,7 @@ def main() -> int:
             "status": "invalid",
             "error": str(exc),
             "exit_code": INVALID_RELEASE_EXIT,
+            "doc_redundancy_warnings": [],
         }
     if args.json:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
