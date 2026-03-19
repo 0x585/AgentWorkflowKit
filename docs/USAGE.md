@@ -36,6 +36,7 @@
 - 中央仓库里的 git 工作流源码在 `.workflow-kit/` 和 `.githooks/`
 - 模板产物在 `templates/full_codex_flow/files/.workflow-kit/` 和 `templates/full_codex_flow/files/.githooks/`
 - 下游 `PublicWorkRegisterService` 模板在 `templates/full_codex_flow/files/src/main/python/public_work_register_service.py.tmpl`
+- 完整受管 workflow 规则统一收敛在 `./.workflow-kit/WORKFLOW_CONTRACT.md`
 - 发布 release 时，`scripts/publish_release.py` 会先把源码导出回模板，再生成新的 release 工件
 
 说明：
@@ -85,47 +86,14 @@
 
 因为模板会在发布时自动从源码重新导出。
 
-### 4.1.1 提交前收口命令
+### 4.1.1 执行入口
 
-当前 workflow 不提供也不假设存在一个 Git `git add` hook；Codex 当前也没有可直接依赖的原生“模型结束前先执行本地阻断 hook”能力。
+中央仓和下游仓统一遵循 `./.workflow-kit/WORKFLOW_CONTRACT.md` 中的完整执行规则。这里仅保留维护中央仓时最常用的两个收口入口：
 
-因此，这套 workflow 采用仓库内收口方案：
+- `./.workflow-kit/prepare_commit.sh`
+- `python3 ./.workflow-kit/exec_record_hygiene.py --sync-staged-snapshot --exec-id <exec_id>`
 
-- 检查当前提交是否已经收口：`./.workflow-kit/prepare_commit.sh`
-- 明确把当前所有变更纳入本次提交：`./.workflow-kit/prepare_commit.sh --stage`
-- 如果要给 agent 或脚本消费稳定输出：`./.workflow-kit/prepare_commit.sh --json`
-
-规则：
-
-- 默认模式只检查，不会自动 stage。
-- `--stage` 明确执行 `git add -A`，然后重新检查。
-- 只要还有 unstaged tracked changes 或 untracked files，`.githooks/pre-commit` 就会阻断提交。
-- 特殊场景下可以用 `SKIP_PREPARE_COMMIT_GUARD=1 git commit ...` 临时绕过这层收口检查，但它不会绕过已有的 branch/workspace 守卫。
-
-### 4.1.2 代码任务的提交顺序
-
-代码修改后的默认顺序固定为：
-
-1. 执行测试
-2. 完成审查
-3. 运行 `./.workflow-kit/prepare_commit.sh`
-4. `git commit`
-5. `git push` / auto-release
-6. `python3 scripts/apply_downstreams.py`
-
-具体要求：
-
-- `docs/exec_records/<exec_id>.md` 现在必须记录代码任务的 `验证结果` 和 `审查结果`
-- `commit-msg` 会在代码提交时校验对应 exec record；未完成 `验证结果` / `审查结果` 的代码提交会被阻断
-- `验证结果` 固定至少包含：`命令`、`范围`、`结果`、`未覆盖项`、`提交快照`
-- `审查结果` 固定至少包含：`审查方式`、`结论`、`残余风险`、`提交快照`
-- 最终 staging 后，`验证结果` / `审查结果` 里的两个 `提交快照` 必须和当前 staged snapshot 一致；如果测试或审查后又改了代码，必须重刷快照并重新确认
-- docs-only 提交仍然需要 exec record，但不会被这条“测试 / 审查”校验阻断
-- `prepare_commit.sh` 只负责收口，不替代测试或审查记录
-- `./.workflow-kit/prepare_commit.sh` 会输出当前 `Staged snapshot`
-- 也可以直接运行 `python3 ./.workflow-kit/exec_record_hygiene.py --sync-staged-snapshot --exec-id <exec_id>` 自动刷新两个 `提交快照` 字段
-- `post-commit` 只负责自动 push 当前 `codex/*` 分支；downstream apply 改为在 auto-release 成功 push 默认分支后执行
-- 如需完全跳过 `post-commit` 自动化，使用 `SKIP_POST_COMMIT_AUTOMATION=1 git commit ...`
+如果需要查看完整的代码任务顺序、workspace 守卫、commit gate 或异常恢复语义，直接查阅 contract，不再在本手册里重复维护第二份完整合同。
 
 ### 4.2 导出模板
 
@@ -140,7 +108,7 @@ python3 scripts/export_templates.py --repo-id AgentWorkflowKit
 当源码修改稳定后，发布新的 workflow 版本：
 
 ```bash
-python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.3
+python3 scripts/publish_release.py --profile full_codex_flow --version <new-version>
 ```
 
 这一步会做三件事：
@@ -200,13 +168,7 @@ python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/AgentTask 
 - `drift`：本地受管文件被改动，和已安装 release 不一致
 - `invalid`：元数据或路径异常
 
-下游仓库的受管入口现在默认优先直接执行本地脚本，不会在每次调用前都回中央仓库做版本核对。只有入口执行失败时，`workflow_guard` 才会补做版本检查；如果发现只是版本落后，会自动应用最新已发布 release 并重试一次。
-
-新增边界：
-
-- 自动 apply 只允许发生在 `codex/*` worktree 这类非默认分支工作区
-- 如果当前位于子仓 primary checkout 或默认分支（例如 `main`），`workflow_guard` 会直接报错并提示改走中央仓库的 `scripts/apply_release.py` 或先切到 `codex/*` 工作区
-- 这样做的目的，是避免一次“失败后自动升级”把子仓默认分支直接改脏
+下游仓库的受管入口现在默认优先直接执行本地脚本，不会在每次调用前都回中央仓库做版本核对。只有入口执行失败时，`workflow_guard` 才会补做版本检查；workspace 限制、自动 apply 边界和失败重试语义统一见 `./.workflow-kit/WORKFLOW_CONTRACT.md`。
 
 ## 5. 中央仓库提交后的自动行为
 
@@ -298,7 +260,7 @@ SKIP_POST_COMMIT_AUTOMATION=1 git commit ...
 新增 `repos/<RepoId>.json` 后，发布一个新的 workflow 版本：
 
 ```bash
-python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.3
+python3 scripts/publish_release.py --profile full_codex_flow --version <new-version>
 ```
 
 这样新的子应用就会被纳入 release 清单。

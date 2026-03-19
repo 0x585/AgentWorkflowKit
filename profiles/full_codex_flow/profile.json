@@ -13,6 +13,11 @@
     },
     {
       "type": "file",
+      "output": ".workflow-kit/WORKFLOW_CONTRACT.md",
+      "template": "templates/full_codex_flow/files/.workflow-kit/WORKFLOW_CONTRACT.md.tmpl"
+    },
+    {
+      "type": "file",
       "output": ".githooks/commit-msg",
       "template": "templates/full_codex_flow/files/.githooks/commit-msg.tmpl",
       "executable": true

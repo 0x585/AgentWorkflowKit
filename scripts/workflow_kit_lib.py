@@ -50,6 +50,27 @@ MANAGED_DOC_MARKERS = {
     "AGENTS.md": ("<!-- workflow-kit:agents:start -->", "<!-- workflow-kit:agents:end -->"),
     "README.md": ("<!-- workflow-kit:readme:start -->", "<!-- workflow-kit:readme:end -->"),
 }
+DOC_REDUNDANCY_WARNING_MESSAGE = (
+    "Possible duplicate central workflow guidance outside the managed block. "
+    "Prefer referencing `./.workflow-kit/WORKFLOW_CONTRACT.md`; keep only repository-specific rules outside the managed block."
+)
+DOC_REDUNDANCY_TOPIC_PATTERNS = (
+    ("assert_workspace", re.compile(r"(?:^|[`\s(])\./\.workflow-kit/assert_workspace\.sh(?:$|[`)\s.,])")),
+    ("codex_worktree", re.compile(r"`?codex/\*`?")),
+    ("prepare_commit", re.compile(r"(?:^|[`\s(])\./\.workflow-kit/prepare_commit\.sh(?:$|[`)\s.,])")),
+    (
+        "exec_record_validation_review",
+        re.compile(r"docs/exec_records/|验证结果|审查结果|提交快照|test\s*->\s*review\s*->\s*commit", re.IGNORECASE),
+    ),
+    (
+        "managed_workflow_entrypoints",
+        re.compile(
+            r"managed workflow entrypoints|legacy managed workflow entrypoints|project-owned (?:callers|scripts) "
+            r"should (?:invoke|call) `\.workflow-kit/\*` directly",
+            re.IGNORECASE,
+        ),
+    ),
+)
 LEGACY_AGENTS_WORKFLOW_SECTION_TITLES = {
     "Workspace Guard",
     "Session Start Default",
@@ -252,6 +273,47 @@ def extract_block(text: str, start_marker: str, end_marker: str) -> str | None:
     _, remainder = text.split(start_marker, 1)
     content, _ = remainder.split(end_marker, 1)
     return content.strip("\n") + "\n"
+
+
+def _strip_managed_block_text(text: str, start_marker: str, end_marker: str) -> str:
+    if start_marker not in text or end_marker not in text:
+        return text
+    before, remainder = text.split(start_marker, 1)
+    _, after = remainder.split(end_marker, 1)
+    collapsed = before.rstrip("\n")
+    trailing = after.lstrip("\n")
+    if collapsed and trailing:
+        return collapsed + "\n\n" + trailing
+    if collapsed:
+        return collapsed + "\n"
+    return trailing
+
+
+def scan_doc_redundancy_warnings(repo_root: Path) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    for relative_path in ("README.md", "AGENTS.md"):
+        target = repo_root / relative_path
+        if not target.is_file():
+            continue
+        text = target.read_text(encoding="utf-8")
+        markers = MANAGED_DOC_MARKERS.get(relative_path)
+        if markers is not None:
+            text = _strip_managed_block_text(text, markers[0], markers[1])
+        matched_topics = [
+            topic
+            for topic, pattern in DOC_REDUNDANCY_TOPIC_PATTERNS
+            if pattern.search(text) is not None
+        ]
+        if not matched_topics:
+            continue
+        warnings.append(
+            {
+                "file": relative_path,
+                "matched_topics": matched_topics,
+                "message": DOC_REDUNDANCY_WARNING_MESSAGE,
+            }
+        )
+    return warnings
 
 
 def render_entry(
@@ -664,6 +726,13 @@ def placeholderize_runtime_entry(
     }
     for pattern, replacement in json_field_patterns.items():
         placeholderized = re.sub(pattern, replacement, placeholderized)
+    if entry.output == f"{MANAGED_WORKFLOW_DIR}/WORKFLOW_CONTRACT.md":
+        placeholderized = re.sub(r"(?m)^- Profile: `[^`]+`$", "- Profile: `{{ profile }}`", placeholderized)
+        placeholderized = re.sub(
+            r"(?m)^- Workflow version: `[^`]+`$",
+            "- Workflow version: `{{ workflow_version }}`",
+            placeholderized,
+        )
     return placeholderized
 
 
@@ -729,6 +798,7 @@ def apply_release_to_repo(
         refreshed_doc_paths = refresh_workflow_doc_entrypoints(resolved_repo_root)
         ensure_local_exclude_patterns(resolved_repo_root)
         ensure_core_hooks_path(resolved_repo_root)
+    doc_redundancy_warnings = scan_doc_redundancy_warnings(resolved_repo_root)
     return {
         "repo_root": str(resolved_repo_root),
         "repo_id": resolved_repo_id,
@@ -737,6 +807,7 @@ def apply_release_to_repo(
         "managed_entry_count": len(rendered_entries),
         "removed_legacy_paths": removed_legacy_paths,
         "refreshed_doc_paths": refreshed_doc_paths,
+        "doc_redundancy_warnings": doc_redundancy_warnings,
     }
 
 
@@ -852,6 +923,7 @@ def check_repo_release(
     else:
         status = "current"
         exit_code = CURRENT_RELEASE_EXIT
+    doc_redundancy_warnings = scan_doc_redundancy_warnings(repo_root)
     return {
         "repo_root": str(repo_root),
         "repo_id": resolved_repo_id,
@@ -862,6 +934,7 @@ def check_repo_release(
         "status": status,
         "exit_code": exit_code,
         "mismatches": mismatches,
+        "doc_redundancy_warnings": doc_redundancy_warnings,
     }
 
 

@@ -1,0 +1,22 @@
+[1022] feat(workflow): slim managed workflow docs
+
+# Changes
+# - add managed .workflow-kit/WORKFLOW_CONTRACT.md as the single detailed workflow contract
+# - shrink managed AGENTS/README blocks to short pointers and slim central repo workflow entry docs
+# - add non-blocking doc_redundancy_warnings to apply/check summaries and publish release 1.0.22
+
+# Tests
+# - 命令：python3 -m py_compile scripts/workflow_kit_lib.py scripts/check_release.py scripts/apply_release.py tests/test_workflow_release.py; python3 -m unittest tests.test_workflow_release; python3 scripts/export_templates.py --repo-id AgentWorkflowKit; python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.22; python3 scripts/apply_release.py --repo-root /Users/pi/PyCharmProject/AgentWorkflowKit-wt-workflow-contract-trim --repo-id AgentWorkflowKit; python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/AgentWorkflowKit-wt-workflow-contract-trim --repo-id AgentWorkflowKit --json; sampled detached-worktree apply/check for AgentTask and AgentTransitStation; git diff --check
+# - 范围：contract 下推、短 managed block、重复文案 warning、中央仓文档与 release 1.0.22 工件
+# - 结果：全部通过；tests.test_workflow_release 共 33 个用例通过；中央仓与抽样 detached worktree 验证均通过
+# - 未覆盖项：未直接在 AgentTask / AgentTransitStation 现有主工作区 apply，因为两仓当前已有未提交改动
+# - 提交快照：c136ea4e165ea20f8225e52fe4cdb0774917a90ad69d6deff06b002867b0ec64
+
+# Review
+# - 审查方式：人工审查 git diff --stat 与关键文件 diff，核对 contract、warning 扫描范围、模板 placeholder 和 runtime 版本回写
+# - 结论：实现与方案一致，未发现行为语义回归
+# - 残余风险：重复文案 warning 仍依赖固定 topic 关键字匹配，后续若出现新写法需要补充 pattern
+# - 提交快照：c136ea4e165ea20f8225e52fe4cdb0774917a90ad69d6deff06b002867b0ec64
+
+# Risks
+# - downstream 主工作区目前不干净；后续若直接原地 apply，仍需先处理既有改动
