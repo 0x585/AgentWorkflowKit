@@ -690,6 +690,10 @@ def placeholderize_runtime_entry(
             "from {{ python_package_name }}.tooling.service.public_work_register_service import PublicWorkRegisterService",
         ),
         (
+            f'PACKAGE_ROOT = REPO_ROOT / "src" / "main" / "python" / "{python_package_name}"',
+            'PACKAGE_ROOT = REPO_ROOT / "src" / "main" / "python" / "{{ python_package_name }}"',
+        ),
+        (
             f'if [[ -d "$ROOT/{compile_main_path}" ]]; then',
             'if [[ -d "$ROOT/{{ compile_main_path }}" ]]; then',
         ),

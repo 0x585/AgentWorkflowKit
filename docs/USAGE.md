@@ -48,6 +48,7 @@
 - git 工作流相关的受管入口统一固定在 `.workflow-kit/`
 - 中央仓库自身的 `PublicWorkRegister` 脚本依赖 `src/main/python/agent_workflow_kit/tooling/service/public_work_register_service.py`
 - 下游仓库中的 `src/main/python/<python_package_name>/tooling/service/public_work_register_service.py` 也由中央仓库统一下发，不应在子项目里各自分叉维护
+- 下游 `public_work_register_sync.py` / `public_work_register_claim.py` 中涉及 Python 包路径的位置，也必须跟随 repo manifest 的 `python_package_name` 展开，不能回退到中央仓自身包名
 
 ## 3. 目录说明
 

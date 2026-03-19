@@ -19,7 +19,7 @@ if os.environ.get("WORKFLOW_GUARD_ACTIVE") != "1":
         os.environ,
     )
 
-PACKAGE_ROOT = REPO_ROOT / "src" / "main" / "python" / "agent_workflow_kit"
+PACKAGE_ROOT = REPO_ROOT / "src" / "main" / "python" / "{{ python_package_name }}"
 PENDING_WORKLIST_PATH = REPO_ROOT / "docs" / "design" / "pending-worklist.md"
 DEFAULT_PENDING_WORKLIST = """# 待处理清单
 
