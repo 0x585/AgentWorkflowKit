@@ -1,0 +1,22 @@
+[1024] docs(workflow): default same-turn commit after verification
+
+# Changes
+# - add an explicit workflow-contract rule to finish prepare_commit -> git commit in the same turn once validation/review passes and no commit gate remains
+# - sync the central AGENTS managed block, maintainer usage doc, and downstream agents block template to the new rule text
+# - publish release 1.0.24 so the updated contract and block template are captured in current release artifacts
+
+# Tests
+# - 命令：python3 scripts/export_templates.py --repo-id AgentWorkflowKit; python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.24; git diff --check; rg -n "modified-but-uncommitted|1.0.24|Once validation/review passes" .workflow-kit/WORKFLOW_CONTRACT.md AGENTS.md docs/USAGE.md templates/full_codex_flow/blocks/agents-workflow.md.tmpl templates/full_codex_flow/files/.workflow-kit/WORKFLOW_CONTRACT.md.tmpl profiles/full_codex_flow/release.json profiles/full_codex_flow/managed-files.lock.json profiles/full_codex_flow/releases/1.0.24/release.json profiles/full_codex_flow/releases/1.0.24/managed-files.lock.json
+# - 范围：commit 规则文案、中央仓入口文档、下游 agents 模板，以及 release 1.0.24 工件与 lock 同步
+# - 结果：全部通过；export/publish 成功，diff --check 清洁，规则已落到 source、模板和 release lock
+# - 未覆盖项：未额外抽样执行下游 apply/check；本次无 runtime 逻辑改动
+# - 提交快照：71e9897a28ecfc0ffc6abcc60a1dd24e6be7c04c0d17a227b6a168581f5c5c5a
+
+# Review
+# - 审查方式：人工审查 git diff --stat 与关键文件 diff，核对 contract、入口文档、agents 模板及 release 工件一致性
+# - 结论：实现与需求一致，未发现额外运行时行为改动
+# - 残余风险：规则目前依赖合同约束而非 hook 级强制校验
+# - 提交快照：71e9897a28ecfc0ffc6abcc60a1dd24e6be7c04c0d17a227b6a168581f5c5c5a
+
+# Risks
+# - if stricter enforcement is needed later, this rule may still need to move into hook or commit-gate logic

@@ -29,6 +29,7 @@
 
 - Commit messages use `[<exec_id>] <type>(<scope>): <summary>`.
 - Before `git commit`, run `./.workflow-kit/prepare_commit.sh`; use `./.workflow-kit/prepare_commit.sh --stage` only when the commit should intentionally include every current change.
+- Unless the user explicitly asks to pause first, once validation/review has passed and no remaining commit gate blocks progress, Codex should finish `./.workflow-kit/prepare_commit.sh -> git commit` in the current turn rather than handing off a modified-but-uncommitted workspace.
 - Code-task exec records must complete `验证结果` and `审查结果` before `commit-msg` can pass.
 - `验证结果` must record `命令`、`范围`、`结果`、`未覆盖项`、`提交快照`.
 - `审查结果` must record `审查方式`、`结论`、`残余风险`、`提交快照`.

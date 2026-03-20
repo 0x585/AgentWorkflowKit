@@ -2,6 +2,7 @@
 
 | ID | Date | Summary |
 |---|---|---|
+| 1024 | 2026-03-21 | docs(workflow): default same-turn commit after verification |
 | 1023 | 2026-03-20 | TODO |
 | 1022 | 2026-03-20 | TODO |
 | 1020 | 2026-03-18 | feat(workflow): add downstream recovery and snapshot guard |

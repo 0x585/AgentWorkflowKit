@@ -94,6 +94,8 @@
 - `./.workflow-kit/prepare_commit.sh`
 - `python3 ./.workflow-kit/exec_record_hygiene.py --sync-staged-snapshot --exec-id <exec_id>`
 
+对代码任务，只要 `验证结果`、`审查结果` 都已完成，且没有剩余 commit gate 阻塞，Codex 默认应在当前回合继续执行 `./.workflow-kit/prepare_commit.sh` 与 `git commit`，不要停在“已修改但未 commit”的状态；只有用户明确要求暂停，或 gate 尚未通过时，才保留未提交现场。
+
 如果需要查看完整的代码任务顺序、workspace 守卫、commit gate 或异常恢复语义，直接查阅 contract，不再在本手册里重复维护第二份完整合同。
 
 ### 4.2 导出模板
