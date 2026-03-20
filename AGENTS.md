@@ -32,7 +32,7 @@ python3 scripts/publish_release.py --profile full_codex_flow --version <new-vers
 
 - `PublicWorkRegister` directory selection must stay bound to the canonical project directory, not a worktree-specific folder name.
 - `scripts/apply_downstreams.py` refuses to run when current release artifacts are stale relative to the source repo.
-- `scripts/apply_downstreams.py` now creates downstream local commits in child-repo worktrees; it does not push or auto-release those downstream commits.
+- `scripts/apply_downstreams.py` 现在会在下游 worktree 中生成变更、完成自动审查，并在没有阻断问题时直接提交并 auto-release 合并到下游默认分支；若 auto-release 被环境条件阻塞，则保留本地 worktree 供恢复。
 - 中央仓库的 downstream apply 顺序固定为：`测试 -> 审查 -> commit -> push/auto-release -> apply_downstreams.py`。
 - `scripts/apply_downstreams.py` 现在支持 `--repo-id <RepoId>` 与 `--resume-existing-worktree`，用于单仓恢复失败的 fan-out worktree。
 - `session_push_autorelease.sh` 会在 `<default-branch>` push 成功后再执行 `python3 scripts/apply_downstreams.py`，避免在 auto-release 前提早 fan-out。

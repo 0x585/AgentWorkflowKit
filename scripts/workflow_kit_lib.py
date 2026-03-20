@@ -1073,44 +1073,81 @@ def _write_downstream_exec_record(
     default_branch: str,
     changed_paths: list[str],
     commit_message: str,
+    auto_release_after_review: bool,
+    validation_command: str,
+    validation_result: str,
+    validation_uncovered: str,
+    review_method: str,
+    review_conclusion: str,
+    review_risk: str,
 ) -> None:
     today = date.today().isoformat()
     changed_path_block = _render_changed_paths(changed_paths)
     record_path = worktree_root / "docs" / "exec_records" / f"{exec_id}.md"
     commit_template_path = worktree_root / "docs" / "exec_records" / f"{exec_id}_commit.txt"
+    if auto_release_after_review:
+        dod_goal = f"- [x] 需求目标已明确（本次下推在自动审查通过后会直接尝试 merge 到 {default_branch}）\n"
+        summary_text = (
+            f"将中央仓库当前发布的 `{profile}@{workflow_version}` 应用到 `{repo_id}`，并在自动审查通过后直接尝试 merge 到 `{default_branch}`。"
+        )
+        change_notes = (
+            f"- 通过受管 worktree 提交流程下推 `{profile}@{workflow_version}`。\n"
+            f"- 自动审查未发现阻断问题时，commit 后会直接尝试 auto-release merge 到 `{default_branch}`。\n"
+            "- 若 auto-release 被环境条件阻塞，则保留 worktree 供恢复。\n"
+        )
+        final_goal = (
+            f"- [ ] 若为代码任务：auto-release 成功后会 merge 到 {default_branch} 并清理分支；若流程中断则保留 worktree 供恢复\n\n"
+        )
+        current_hold = "- 无；若 auto-release 被阻塞，则保留本地 worktree 待恢复。\n\n"
+        rollback_risk = "- 风险：child repo 项目测试未自动执行；若 auto-release 被环境阻塞，变更会保留在本地 worktree。\n"
+        rollback_note = "- 回滚：删除该 worktree 与本地分支，或在子仓库中回退此 commit。\n"
+        commit_change_note = "# - trigger auto-release merge immediately after this downstream commit if automated review passes\n"
+        commit_risk_note = "# - child-repo tests are not run automatically; if auto-release is blocked, continue from the preserved worktree\n"
+    else:
+        dod_goal = "- [x] 需求目标已明确（本次只做本地提交，不自动 push/release）\n"
+        summary_text = f"将中央仓库当前发布的 `{profile}@{workflow_version}` 应用到 `{repo_id}`，并在子仓库 worktree 中生成本地提交。"
+        change_notes = (
+            f"- 通过受管 worktree 提交流程下推 `{profile}@{workflow_version}`。\n"
+            "- 保留 worktree 供后续人工检查、push 或 release。\n"
+        )
+        final_goal = f"- [ ] 若为代码任务：已 push / release，并完成分支清理（目标分支：{default_branch}）\n\n"
+        current_hold = "- 本地 worktree 待后续 push/release。\n\n"
+        rollback_risk = "- 风险：当前变更仅存在于本地 worktree，尚未推送。\n"
+        rollback_note = "- 回滚：删除该 worktree 与本地分支，或在子仓库中回退此 commit。\n"
+        commit_change_note = "# - keep the resulting worktree local for later push/release\n"
+        commit_risk_note = "# - downstream worktree remains local and still needs manual push/release\n"
     record_path.write_text(
         (
             f"# {exec_id}\n\n"
             "## 完成定义（DoD）\n\n"
-            "- [x] 需求目标已明确（本次只做本地提交，不自动 push/release）\n"
-            "- [x] 若有代码修改：已记录本次 downstream fan-out 未自动执行测试\n"
-            "- [x] 若有代码修改：已记录本次 downstream fan-out 为自动化本地提交\n"
-            f"- [ ] 若为代码任务：已 push / release，并完成分支清理（目标分支：{default_branch}）\n\n"
+            f"{dod_goal}"
+            "- [x] 若有代码修改：已记录本次 downstream fan-out 的自动校验结果\n"
+            "- [x] 若有代码修改：已记录本次 downstream fan-out 的自动审查结论\n"
+            f"{final_goal}"
             "## 需求摘要\n\n"
-            f"将中央仓库当前发布的 `{profile}@{workflow_version}` 应用到 `{repo_id}`，并在子仓库 worktree 中生成本地提交。\n\n"
+            f"{summary_text}\n\n"
             "## 变更文件\n\n"
             f"{changed_path_block}\n\n"
             "## 变更说明\n\n"
-            f"- 通过受管 worktree 提交流程下推 `{profile}@{workflow_version}`。\n"
-            "- 保留 worktree 供后续人工检查、push 或 release。\n\n"
+            f"{change_notes}\n"
             "## 验证结果\n\n"
-            "- 命令：未自动执行（downstream local commit only）\n"
+            f"- 命令：{validation_command}\n"
             "- 范围：受管 workflow 文件\n"
-            "- 结果：仅验证已生成本地 downstream commit\n"
-            "- 未覆盖项：未在 child repo 自动运行项目测试\n"
+            f"- 结果：{validation_result}\n"
+            f"- 未覆盖项：{validation_uncovered}\n"
             "- 提交快照：自动化 downstream commit\n\n"
             "## 审查结果\n\n"
-            "- 审查方式：中央 downstream apply 自动生成，待子仓人工复核\n"
-            "- 结论：已生成本地 commit，待后续人工 push/release\n"
-            "- 残余风险：child repo 尚未完成人工校验\n"
+            f"- 审查方式：{review_method}\n"
+            f"- 结论：{review_conclusion}\n"
+            f"- 残余风险：{review_risk}\n"
             "- 提交快照：自动化 downstream commit\n\n"
             "## 完成待办项\n\n"
             "- 无\n\n"
             "## 当前占用待办项\n\n"
-            "- 本地 worktree 待后续 push/release。\n\n"
+            f"{current_hold}"
             "## 风险与回滚\n\n"
-            "- 风险：当前变更仅存在于本地 worktree，尚未推送。\n"
-            "- 回滚：删除该 worktree 与本地分支，或在子仓库中回退此 commit。\n"
+            f"{rollback_risk}"
+            f"{rollback_note}"
             f"\n## 记录时间\n\n- {today}\n"
         ),
         encoding="utf-8",
@@ -1120,23 +1157,118 @@ def _write_downstream_exec_record(
             f"{commit_message}\n\n"
             "# Changes\n"
             f"# - apply {profile}@{workflow_version} into downstream repo {repo_id}\n"
-            "# - keep the resulting worktree local for later push/release\n\n"
+            f"{commit_change_note}\n"
             "# Tests\n"
-            "# - 命令：未自动执行（downstream local commit only）\n"
+            f"# - 命令：{validation_command}\n"
             "# - 范围：受管 workflow 文件\n"
-            "# - 结果：仅验证已生成本地 downstream commit\n"
-            "# - 未覆盖项：未在 child repo 自动运行项目测试\n"
+            f"# - 结果：{validation_result}\n"
+            f"# - 未覆盖项：{validation_uncovered}\n"
             "# - 提交快照：自动化 downstream commit\n\n"
             "# Review\n"
-            "# - 审查方式：中央 downstream apply 自动生成，待子仓人工复核\n"
-            "# - 结论：已生成本地 commit，待后续人工 push/release\n"
-            "# - 残余风险：child repo 尚未完成人工校验\n"
+            f"# - 审查方式：{review_method}\n"
+            f"# - 结论：{review_conclusion}\n"
+            f"# - 残余风险：{review_risk}\n"
             "# - 提交快照：自动化 downstream commit\n\n"
             "# Risks\n"
-            "# - downstream worktree remains local and still needs manual push/release\n"
+            f"{commit_risk_note}"
         ),
         encoding="utf-8",
     )
+
+
+def _run_downstream_release_review(
+    workflow_root: Path,
+    worktree_root: Path,
+    repo_id: str,
+    default_branch: str,
+) -> dict[str, str]:
+    diff_command = f"git -C {worktree_root} diff --check"
+    _run_command(["git", "-C", str(worktree_root), "diff", "--check"])
+
+    check_release_script = workflow_root / "scripts" / "check_release.py"
+    check_release_command = (
+        f"python3 {check_release_script} --repo-root {worktree_root} --repo-id {repo_id} --json"
+    )
+    review_process = _run_command(
+        [
+            "python3",
+            str(check_release_script),
+            "--repo-root",
+            str(worktree_root),
+            "--repo-id",
+            repo_id,
+            "--json",
+        ],
+        cwd=workflow_root,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+    review_payload = json.loads(review_process.stdout)
+    review_status = str(review_payload.get("status", ""))
+    if review_status != "current":
+        mismatches = [
+            str(item.get("path"))
+            for item in review_payload.get("mismatches", [])
+            if isinstance(item, dict) and item.get("path")
+        ]
+        mismatch_suffix = f" mismatches={mismatches}" if mismatches else ""
+        raise RuntimeError(
+            f"downstream auto review failed: check_release status={review_status}.{mismatch_suffix}"
+        )
+
+    warnings = [
+        warning
+        for warning in review_payload.get("doc_redundancy_warnings", [])
+        if isinstance(warning, dict)
+    ]
+    validation_result = "通过；git diff --check 无异常，check_release=status=current"
+    if warnings:
+        warning_files = ",".join(sorted(str(warning.get("file")) for warning in warnings if warning.get("file")))
+        if warning_files:
+            validation_result += f"，doc_redundancy_warnings={len(warnings)} ({warning_files})"
+        else:
+            validation_result += f"，doc_redundancy_warnings={len(warnings)}"
+        review_risk = f"未在 child repo 自动运行项目测试；存在 {len(warnings)} 项非阻断文档 warning"
+    else:
+        review_risk = "未在 child repo 自动运行项目测试"
+
+    return {
+        "validation_command": f"{diff_command}；{check_release_command}",
+        "validation_result": validation_result,
+        "validation_uncovered": "未在 child repo 自动运行项目测试",
+        "review_method": "自动审查 `git diff --check` 与 `check_release.py --json`",
+        "review_conclusion": f"未发现阻断问题，commit 后直接尝试 auto-release merge 到 `{default_branch}`",
+        "review_risk": review_risk,
+    }
+
+
+def _auto_release_downstream_worktree(
+    repo_root: Path,
+    worktree_root: Path,
+    branch: str,
+    default_branch: str,
+) -> str:
+    autorelease_script = worktree_root / MANAGED_WORKFLOW_DIR / "session_push_autorelease.sh"
+    if not autorelease_script.is_file():
+        raise FileNotFoundError(f"downstream auto-release script not found: {autorelease_script}")
+    _run_command(
+        [
+            str(autorelease_script),
+            "--source-branch",
+            branch,
+            "--target",
+            default_branch,
+        ],
+        cwd=worktree_root,
+        env={
+            **os.environ,
+            "WORKFLOW_GUARD_ACTIVE": "1",
+            "SKIP_APPLY_DOWNSTREAMS_AFTER_COMMIT": "1",
+            "SKIP_AUTO_PUSH_AFTER_COMMIT": "1",
+            "SKIP_POST_COMMIT_AUTOMATION": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+        },
+    )
+    return _git_output(repo_root, "rev-parse", default_branch)
 
 
 def submit_release_to_repo_via_worktree_commit(
@@ -1145,6 +1277,7 @@ def submit_release_to_repo_via_worktree_commit(
     repo_id: str | None = None,
     profile: str = DEFAULT_PROFILE,
     resume_existing_worktree: bool = False,
+    auto_release_after_review: bool = False,
 ) -> dict[str, Any]:
     resolved_repo_root = repo_root.expanduser().resolve()
     summary: dict[str, Any] = {
@@ -1164,6 +1297,9 @@ def submit_release_to_repo_via_worktree_commit(
         "changed_paths": [],
         "error": None,
         "resumed_existing_worktree": False,
+        "review_status": "skipped",
+        "release_error": None,
+        "released_main_sha": None,
     }
 
     try:
@@ -1258,6 +1394,23 @@ def submit_release_to_repo_via_worktree_commit(
 
         changed_paths = sorted(after_paths)
         commit_message = f"[{exec_id}] chore(workflow): apply {resolved_profile}@{workflow_version}"
+        if auto_release_after_review:
+            review_details = _run_downstream_release_review(
+                workflow_root=workflow_root,
+                worktree_root=worktree_root,
+                repo_id=resolved_repo_id,
+                default_branch=default_branch,
+            )
+            summary["review_status"] = "passed"
+        else:
+            review_details = {
+                "validation_command": "未自动执行（downstream local commit only）",
+                "validation_result": "仅验证已生成本地 downstream commit",
+                "validation_uncovered": "未在 child repo 自动运行项目测试",
+                "review_method": "中央 downstream apply 自动生成，待子仓人工复核",
+                "review_conclusion": "已生成本地 commit，待后续人工 push/release",
+                "review_risk": "child repo 尚未完成人工校验",
+            }
         _write_downstream_exec_record(
             worktree_root,
             exec_id=exec_id,
@@ -1267,6 +1420,13 @@ def submit_release_to_repo_via_worktree_commit(
             default_branch=default_branch,
             changed_paths=changed_paths,
             commit_message=commit_message,
+            auto_release_after_review=auto_release_after_review,
+            validation_command=str(review_details["validation_command"]),
+            validation_result=str(review_details["validation_result"]),
+            validation_uncovered=str(review_details["validation_uncovered"]),
+            review_method=str(review_details["review_method"]),
+            review_conclusion=str(review_details["review_conclusion"]),
+            review_risk=str(review_details["review_risk"]),
         )
         commit_env = {
             **os.environ,
@@ -1287,6 +1447,27 @@ def submit_release_to_repo_via_worktree_commit(
                 "changed_paths": changed_paths,
             }
         )
+        if auto_release_after_review:
+            try:
+                released_main_sha = _auto_release_downstream_worktree(
+                    repo_root=resolved_repo_root,
+                    worktree_root=worktree_root,
+                    branch=branch,
+                    default_branch=default_branch,
+                )
+                summary.update(
+                    {
+                        "action": "released",
+                        "released_main_sha": released_main_sha,
+                    }
+                )
+            except Exception as exc:
+                summary.update(
+                    {
+                        "action": "committed-pending-release",
+                        "release_error": str(exc),
+                    }
+                )
         return summary
     except Exception as exc:
         summary["error"] = str(exc)

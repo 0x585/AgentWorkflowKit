@@ -68,9 +68,10 @@ def main() -> int:
             repo_id=repo_id,
             profile=args.profile,
             resume_existing_worktree=args.resume_existing_worktree,
+            auto_release_after_review=True,
         )
         summaries.append(summary)
-        if summary.get("action") == "failed":
+        if summary.get("action") not in {"released", "skip-current", "noop-cleanup"}:
             failed_repo_count += 1
 
     print(

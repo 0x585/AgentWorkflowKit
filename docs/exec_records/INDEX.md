@@ -2,6 +2,7 @@
 
 | ID | Date | Summary |
 |---|---|---|
+| 1025 | 2026-03-21 | feat(workflow): auto-release downstream applies |
 | 1024 | 2026-03-21 | docs(workflow): default same-turn commit after verification |
 | 1023 | 2026-03-20 | TODO |
 | 1022 | 2026-03-20 | TODO |

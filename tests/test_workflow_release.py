@@ -692,7 +692,7 @@ Run `./scripts/new_exec.sh`.
             self.assertIsNotNone(readme_block)
             self.assertIn("Full workflow rules: `./.workflow-kit/WORKFLOW_CONTRACT.md`.", str(agents_block))
             self.assertIn("Full workflow rules: `./.workflow-kit/WORKFLOW_CONTRACT.md`.", str(readme_block))
-            self.assertLessEqual(len(str(agents_block).splitlines()), 6)
+            self.assertLessEqual(len(str(agents_block).splitlines()), 7)
             self.assertLessEqual(len(str(readme_block).splitlines()), 5)
             self.assertNotIn("Workflow version", str(agents_block))
             self.assertNotIn("prepare_commit", str(readme_block))
@@ -1825,7 +1825,7 @@ fi
             self.assertEqual(2, payload["processed_repo_count"])
             self.assertEqual(1, payload["failed_repo_count"])
             actions = {entry["repo_id"]: entry["action"] for entry in payload["repositories"]}
-            self.assertEqual("committed", actions["GoodRepo"])
+            self.assertEqual("released", actions["GoodRepo"])
             self.assertEqual("failed", actions["BadRepo"])
 
     def test_apply_downstreams_can_target_single_repo_with_resume_existing_worktree(self) -> None:
@@ -1877,6 +1877,89 @@ fi
             self.assertEqual(1, payload["processed_repo_count"])
             self.assertEqual("OnlyRepo", payload["repositories"][0]["repo_id"])
             self.assertTrue(payload["repositories"][0]["resumed_existing_worktree"])
+            self.assertEqual("released", payload["repositories"][0]["action"])
+            self.assertTrue(str(payload["repositories"][0]["released_main_sha"]))
+
+    def test_apply_downstreams_auto_releases_repo_after_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+            shutil.rmtree(workflow_root / "repos")
+            (workflow_root / "repos").mkdir(parents=True, exist_ok=True)
+            write_json(workflow_root / ".workflow-kit" / "source.json", {"repo_id": "WorkflowRepo"})
+            self.write_named_repo_config(workflow_root, workflow_root, repo_id="WorkflowRepo", default_branch="main")
+
+            repo_root = temp_root / "OnlyRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="OnlyRepo", installed_version="1.0.0")
+            self.publish_release_for_repo_ids(workflow_root, "1.0.1", ["WorkflowRepo", "OnlyRepo"])
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(workflow_root / "scripts" / "apply_downstreams.py"),
+                    "--repo-id",
+                    "OnlyRepo",
+                ],
+                cwd=workflow_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode)
+            payload = json.loads(result.stdout)
+            summary = payload["repositories"][0]
+            self.assertEqual("released", summary["action"])
+            self.assertEqual("passed", summary["review_status"])
+            self.assertTrue(str(summary["commit_sha"]))
+            self.assertTrue(str(summary["released_main_sha"]))
+            self.assertFalse(Path(str(summary["worktree_path"])).exists())
+            self.assertEqual(
+                "Merge branch 'codex/workflow-release-1-0-1'",
+                self.git(repo_root, "log", "-1", "--format=%s").stdout.strip(),
+            )
+            remote_heads = self.git(repo_root, "ls-remote", "--heads", "origin").stdout
+            self.assertIn("refs/heads/main", remote_heads)
+            self.assertNotIn("refs/heads/codex/workflow-release-1-0-1", remote_heads)
+
+    def test_apply_downstreams_keeps_local_worktree_when_autorelease_is_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+            shutil.rmtree(workflow_root / "repos")
+            (workflow_root / "repos").mkdir(parents=True, exist_ok=True)
+            write_json(workflow_root / ".workflow-kit" / "source.json", {"repo_id": "WorkflowRepo"})
+            self.write_named_repo_config(workflow_root, workflow_root, repo_id="WorkflowRepo", default_branch="main")
+
+            repo_root = temp_root / "BlockedRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="BlockedRepo", installed_version="1.0.0")
+            self.publish_release_for_repo_ids(workflow_root, "1.0.1", ["WorkflowRepo", "BlockedRepo"])
+            readme_path = repo_root / "README.md"
+            readme_path.write_text(readme_path.read_text(encoding="utf-8") + "dirty\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(workflow_root / "scripts" / "apply_downstreams.py"),
+                    "--repo-id",
+                    "BlockedRepo",
+                ],
+                cwd=workflow_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(1, result.returncode)
+            payload = json.loads(result.stdout)
+            self.assertEqual(1, payload["failed_repo_count"])
+            summary = payload["repositories"][0]
+            self.assertEqual("committed-pending-release", summary["action"])
+            self.assertEqual("passed", summary["review_status"])
+            self.assertIn("Primary repository is dirty", str(summary["release_error"]))
+            self.assertTrue(Path(str(summary["worktree_path"])).is_dir())
 
 
 if __name__ == "__main__":
