@@ -1,0 +1,22 @@
+[1025] feat(workflow): auto-release downstream applies
+
+# Changes
+# - make apply_downstreams auto-review downstream worktree changes and auto-release them into each child repo default branch when no blocker is found
+# - return released_main_sha on success and committed-pending-release with release_error when downstream auto-release is blocked
+# - update central AGENTS/USAGE guidance and publish release 1.0.25 for the changed downstream fan-out behavior
+
+# Tests
+# - 命令：python3 -m py_compile scripts/workflow_kit_lib.py scripts/apply_downstreams.py tests/test_workflow_release.py; python3 -m unittest tests.test_workflow_release.WorkflowReleaseTest.test_apply_downstreams_auto_releases_repo_after_review tests.test_workflow_release.WorkflowReleaseTest.test_apply_downstreams_keeps_local_worktree_when_autorelease_is_blocked tests.test_workflow_release.WorkflowReleaseTest.test_apply_downstreams_continues_after_failure_and_returns_nonzero tests.test_workflow_release.WorkflowReleaseTest.test_apply_downstreams_can_target_single_repo_with_resume_existing_worktree tests.test_workflow_release.WorkflowReleaseTest.test_submit_release_to_repo_via_worktree_commit_creates_local_commit tests.test_workflow_release.WorkflowReleaseTest.test_submit_release_to_repo_via_worktree_commit_supports_dirty_primary_repo tests.test_workflow_release.WorkflowReleaseTest.test_submit_release_to_repo_via_worktree_commit_bootstraps_older_shared_venv_runtime; python3 -m unittest tests.test_workflow_release; python3 scripts/export_templates.py --repo-id AgentWorkflowKit; python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.25; git diff --check
+# - 范围：downstream auto-review + auto-release merge、阻塞回退路径、resume fan-out、中央文档说明与 release 1.0.25 工件
+# - 结果：全部通过；35 个 workflow release 回归用例通过，release 1.0.25 发布成功
+# - 未覆盖项：不自动运行下游项目测试；真实远端 merge 仍依赖子仓权限与网络环境
+# - 提交快照：f1dd0bc0bf9707f60e4e08ace6ac5fecd19029172e801c28c5613a00cfee1a9d
+
+# Review
+# - 审查方式：人工审查 git diff --stat、关键函数 diff 与新增测试断言，核对 released/committed-pending-release 两条主分支
+# - 结论：实现与需求一致，未发现对底层本地 commit helper 的非预期回归
+# - 残余风险：自动审查仍不等于下游项目测试；环境阻塞时仍需人工恢复保留的 worktree
+# - 提交快照：f1dd0bc0bf9707f60e4e08ace6ac5fecd19029172e801c28c5613a00cfee1a9d
+
+# Risks
+# - downstream fan-out 现在默认更积极地触发 auto-release；若子仓环境阻塞，会返回非零并留下恢复现场

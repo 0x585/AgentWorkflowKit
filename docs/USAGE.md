@@ -150,10 +150,12 @@ python3 scripts/apply_downstreams.py
 - 这条命令只会在当前 release 工件和源码状态一致时执行
 - 如果当前 release 已经过期，会提示你先重新发布
 - 对于 `current` 状态的子仓库，会直接跳过，不会创建空提交
-- 对于 `outdated` / `drift` 状态的子仓库，会在子仓库主目录旁创建 `*-wt-*` worktree，应用当前 release，并生成本地 commit
+- 对于 `outdated` / `drift` 状态的子仓库，会在子仓库主目录旁创建 `*-wt-*` worktree，应用当前 release，完成自动审查，并在没有阻断问题时直接提交后 auto-release 合并到下游默认分支
 - 如果子仓库缺失 `.workflow-kit/new_worktree.sh`，该子仓会直接失败并返回错误
 - 为兼容仍在旧 runtime 上的子仓库，中央 fan-out 创建 worktree 时会先临时跳过共享 `.venv` 链接，待新 release 应用完成后再补做修复
-- 这些下游提交默认只保留在本地，不会自动 push 或 auto-release；命令输出会返回 worktree 路径、分支名与 commit sha
+- 自动审查当前会执行 `git diff --check` 与 `scripts/check_release.py --json`，确认受管文件已经与当前 release 对齐；这一步不自动运行子仓项目测试
+- 如果 auto-release 成功，命令输出会返回下游 source commit、最终 merge 到默认分支后的 main sha，并自动清理下游 `workflow-release-*` 分支与 worktree
+- 如果 auto-release 被环境条件阻塞，例如下游主仓不干净、同步落后或出现 merge 冲突，会保留本地 worktree 与分支供恢复，并把该子仓记为失败
 - 如果只想重跑某个失败子仓库，可以用 `python3 scripts/apply_downstreams.py --repo-id <RepoId>`
 - 如果该子仓库已经存在未完成的 `workflow-release-*` worktree，可再加 `--resume-existing-worktree` 继续使用原 worktree 恢复 fan-out
 - 如果某个子仓库失败，其他子仓库仍会继续处理，但最终命令会返回非零退出码
@@ -189,9 +191,9 @@ python3 scripts/apply_downstreams.py
 - `.githooks/post-commit` 在 `codex/*` 分支上只负责自动执行 `git push`
 - `.githooks/pre-push` 会接管这个 push，调用 `./.workflow-kit/session_push_autorelease.sh`
 - `session_push_autorelease.sh` 会先完成 merge / push 默认分支，再调用 `python3 scripts/apply_downstreams.py`
-- 只要当前 release 工件是最新的，中央仓库 auto-release 成功后会自动为需要更新的下游仓库创建本地 worktree 提交
+- 只要当前 release 工件是最新的，中央仓库 auto-release 成功后会自动为需要更新的下游仓库创建 fan-out worktree，完成自动审查，并在无阻塞问题时直接把下游变更 merge 到各自默认分支
 - 如果你只是修改了源码但还没有发布新的 release，这个自动动作会拒绝执行，并提示先发布
-- 下游仓库的提交不会在这里自动 push；后续是否 push/release 由对应子仓库自行处理
+- 如果某个下游仓库的 auto-release 被阻塞，对应 `workflow-release-*` worktree 会被保留，后续可在该子仓中继续恢复或手动处理
 
 如果你临时不想触发自动应用，可以在当前命令前加：
 
