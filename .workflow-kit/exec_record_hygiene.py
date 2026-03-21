@@ -266,17 +266,26 @@ class ExecRecordHygieneService:
             return None
         return match.group("body")
 
-    def _validate_structured_section(self, text: str, section_title: str, current_staged_snapshot: str) -> list[str]:
+    def _structured_field_pattern(self, section_title: str, field_name: str | None = None) -> re.Pattern[str]:
+        all_field_names = "|".join(re.escape(name) for name in SECTION_FIELD_ORDER[section_title])
+        selected_field_names = all_field_names if field_name is None else re.escape(field_name)
+        return re.compile(
+            rf"(?ms)^- (?P<field>{selected_field_names})：(?P<value>.*?)(?=^- (?:{all_field_names})：|\Z)"
+        )
+
+    def _extract_structured_section_fields(self, text: str, section_title: str) -> dict[str, str] | None:
         body = self._extract_section_body(text, section_title)
         if body is None:
+            return None
+        fields: dict[str, str] = {}
+        for match in self._structured_field_pattern(section_title).finditer(body):
+            fields[match.group("field").strip()] = match.group("value").strip()
+        return fields
+
+    def _validate_structured_section(self, text: str, section_title: str, current_staged_snapshot: str) -> list[str]:
+        fields = self._extract_structured_section_fields(text, section_title)
+        if fields is None:
             return [f"章节未完成：## {section_title}"]
-        fields = {}
-        for raw_line in body.splitlines():
-            line = raw_line.strip()
-            match = re.match(r"^- ([^：]+)：\s*(.*)$", line)
-            if match is None:
-                continue
-            fields[match.group(1).strip()] = match.group(2).strip()
         missing_items: list[str] = []
         for field_name in SECTION_FIELD_ORDER[section_title]:
             if field_name not in fields:
@@ -299,13 +308,14 @@ class ExecRecordHygieneService:
         if match is None:
             raise RuntimeError(f"Section not found: {section_title}")
         body = match.group("body")
-        field_pattern = re.compile(rf"(?m)^- {re.escape(field_name)}：.*$")
-        replacement = f"- {field_name}：{value}"
-        if field_pattern.search(body):
-            updated_body = field_pattern.sub(replacement, body, count=1)
+        field_pattern = self._structured_field_pattern(section_title, field_name)
+        replacement = f"- {field_name}：{value}\n"
+        field_match = field_pattern.search(body)
+        if field_match is not None:
+            updated_body = body[: field_match.start()] + replacement + body[field_match.end() :]
         else:
             suffix = "" if body.endswith("\n") or not body else "\n"
-            updated_body = f"{body}{suffix}{replacement}\n"
+            updated_body = f"{body}{suffix}{replacement}"
         return text[: match.start("body")] + updated_body + text[match.end("body") :]
 
     def _git_output(self, repo_root: Path, *args: str) -> str:

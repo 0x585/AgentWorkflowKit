@@ -98,56 +98,36 @@ class WorkflowReleaseTest(unittest.TestCase):
         review_mark = "x" if review_checked else " "
         record_path = repo_root / "docs" / "exec_records" / f"{exec_id}.md"
         record_path.write_text(
-            textwrap.dedent(
-                f"""\
-                # {exec_id}
-
-                ## 完成定义（DoD）
-
-                - [x] 需求目标已明确（含“是否必须 merge 到 {target_branch} 并删除分支”）
-                - [{tests_mark}] 若有代码修改：已执行测试并记录结果
-                - [{review_mark}] 若有代码修改：已完成变更审查并记录结论
-                - [ ] 若为代码任务：已 push / auto-release，并完成下游应用
-
-                ## 需求摘要
-
-                测试 commit-msg hook 的代码变更提交流程校验。
-
-                ## 变更文件
-
-                - TODO
-
-                ## 变更说明
-
-                - TODO
-
-                ## 验证结果
-
-                - 命令：{test_command}
-                - 范围：{test_scope}
-                - 结果：{test_result}
-                - 未覆盖项：{test_uncovered}
-                - 提交快照：{test_snapshot}
-
-                ## 审查结果
-
-                - 审查方式：{review_method}
-                - 结论：{review_conclusion}
-                - 残余风险：{review_risk}
-                - 提交快照：{review_snapshot}
-
-                ## 完成待办项
-
-                - 无
-
-                ## 当前占用待办项
-
-                - 无
-
-                ## 风险与回滚
-
-                - TODO
-                """
+            (
+                f"# {exec_id}\n\n"
+                "## 完成定义（DoD）\n\n"
+                f"- [x] 需求目标已明确（含“是否必须 merge 到 {target_branch} 并删除分支”）\n"
+                f"- [{tests_mark}] 若有代码修改：已执行测试并记录结果\n"
+                f"- [{review_mark}] 若有代码修改：已完成变更审查并记录结论\n"
+                "- [ ] 若为代码任务：已 push / auto-release，并完成下游应用\n\n"
+                "## 需求摘要\n\n"
+                "测试 commit-msg hook 的代码变更提交流程校验。\n\n"
+                "## 变更文件\n\n"
+                "- TODO\n\n"
+                "## 变更说明\n\n"
+                "- TODO\n\n"
+                "## 验证结果\n\n"
+                f"- 命令：{test_command}\n"
+                f"- 范围：{test_scope}\n"
+                f"- 结果：{test_result}\n"
+                f"- 未覆盖项：{test_uncovered}\n"
+                f"- 提交快照：{test_snapshot}\n\n"
+                "## 审查结果\n\n"
+                f"- 审查方式：{review_method}\n"
+                f"- 结论：{review_conclusion}\n"
+                f"- 残余风险：{review_risk}\n"
+                f"- 提交快照：{review_snapshot}\n\n"
+                "## 完成待办项\n\n"
+                "- 无\n\n"
+                "## 当前占用待办项\n\n"
+                "- 无\n\n"
+                "## 风险与回滚\n\n"
+                "- TODO\n"
             ),
             encoding="utf-8",
         )
@@ -1462,6 +1442,55 @@ exit 42
             self.assertEqual(1, blocked.returncode)
             self.assertIn("提交快照不匹配：## 验证结果", blocked.stderr)
             self.assertIn(current_snapshot, blocked.stderr)
+
+    def test_commit_msg_allows_multiline_validation_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/commit-multiline-fields",
+                worktree_suffix="commit-multiline-fields",
+            )
+
+            code_path = worktree_root / "src" / "main" / "python" / "temp_repo" / "feature.py"
+            code_path.parent.mkdir(parents=True, exist_ok=True)
+            code_path.write_text("MULTILINE = True\n", encoding="utf-8")
+            self.git(worktree_root, "add", str(code_path.relative_to(worktree_root)))
+            snapshot = self.staged_snapshot(worktree_root)
+
+            exec_id = 2005
+            self.write_exec_record(
+                worktree_root,
+                exec_id,
+                tests_checked=True,
+                review_checked=True,
+                test_command="python3 -m unittest tests.test_workflow_release\n  - 覆盖 commit-msg 校验\n  - 覆盖多行字段解析",
+                test_scope="tests/test_workflow_release.py\n  - 验证结果 / 命令\n  - 验证结果 / 范围",
+                test_result="通过\n  - commit-msg 接受多行字段",
+                test_uncovered="未执行 release/apply 端到端流程\n  - 本用例仅覆盖本地 hook 解析",
+                test_snapshot=snapshot,
+                review_method="自审",
+                review_conclusion="通过",
+                review_risk="未覆盖 release 产物渲染",
+                review_snapshot=snapshot,
+            )
+            message_file = worktree_root / "COMMIT_MSG"
+            message_file.write_text(f"[{exec_id}] feat(workflow): allow multiline exec fields\n", encoding="utf-8")
+
+            allowed = subprocess.run(
+                [str(worktree_root / ".githooks" / "commit-msg"), str(message_file)],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, allowed.returncode, allowed.stderr)
 
     def test_exec_record_hygiene_can_sync_current_staged_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

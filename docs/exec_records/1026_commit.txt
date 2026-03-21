@@ -1,0 +1,21 @@
+[1026] fix(workflow): allow multiline exec record fields
+
+# Changes
+# - allow exec-record structured fields to continue on following lines without tripping commit-msg
+# - sync workflow docs, exported templates, and release 1.0.26 artifacts
+
+# Tests
+# - 命令：python3 -m py_compile .workflow-kit/exec_record_hygiene.py tests/test_workflow_release.py scripts/workflow_kit_lib.py; python3 -m unittest tests.test_workflow_release.WorkflowReleaseTest.test_commit_msg_allows_multiline_validation_fields; python3 -m unittest tests.test_workflow_release; python3 scripts/export_templates.py --repo-id AgentWorkflowKit; python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.26; git diff --check
+# - 范围：exec record multiline parsing, central docs/templates, release 1.0.26 artifacts
+# - 结果：all listed checks passed; release manifest hash 2adffdf5de016c02933c7f891cc2b2a93e44b456911966bb8675ea0c139fdaca
+# - 未覆盖项：no live downstream apply_downstreams fan-out run in a real child repo during this change
+# - 提交快照：02edcbcc9a489cf881310b058d2b87a8f617853170b793b223627866db942c7a
+
+# Review
+# - 审查方式：manual diff review of parser changes, exported templates, docs, and new regression coverage
+# - 结论：required field headers stay enforced while field bodies can now span multiple lines safely
+# - 残余风险：downstream repos need release 1.0.26 applied before they benefit from the relaxed parser
+# - 提交快照：02edcbcc9a489cf881310b058d2b87a8f617853170b793b223627866db942c7a
+
+# Risks
+# - parser still treats a new managed field header as the boundary for the current multiline field body
