@@ -33,6 +33,7 @@
 - Code-task exec records must complete `验证结果` and `审查结果` before `commit-msg` can pass.
 - `验证结果` must record `命令`、`范围`、`结果`、`未覆盖项`、`提交快照`.
 - `审查结果` must record `审查方式`、`结论`、`残余风险`、`提交快照`.
+- Keep each required field header on its own `- 字段：...` line, but the field body may continue on following lines when one line is not enough.
 - After the final staging pass, refresh both `提交快照` fields so they match the current staged snapshot.
 - Managed `pre-commit` blocks commits when unstaged tracked changes or untracked files remain; `SKIP_PREPARE_COMMIT_GUARD=1` bypasses only that readiness check.
 
