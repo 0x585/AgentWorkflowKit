@@ -574,6 +574,8 @@ exec "$ROOT/.workflow-kit/new_branch.sh" "$@"
                 workflow_root / "templates" / "full_codex_flow" / "files" / ".githooks" / "post-commit.tmpl"
             ).read_text(encoding="utf-8")
             self.assertNotIn("apply_downstreams.py", post_commit_template)
+            self.assertIn("session_push_autorelease.sh", post_commit_template)
+            self.assertNotIn("git push 2>&1", post_commit_template)
 
             autorelease_template = (
                 workflow_root
@@ -1324,6 +1326,201 @@ exit 42
 
             self.assertEqual(0, result.returncode)
             self.assertIn("SKIP_POST_COMMIT_AUTOMATION=1", result.stdout)
+
+    def test_post_commit_runs_session_push_autorelease_directly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/post-commit-autorelease",
+                worktree_suffix="post-commit-autorelease",
+            )
+
+            invocation_path = worktree_root / "autorelease-invocation.txt"
+            autorelease_script = worktree_root / ".workflow-kit" / "session_push_autorelease.sh"
+            autorelease_script.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/usr/bin/env bash
+                    set -euo pipefail
+                    printf '%s\n' "$@" > "{invocation_path}"
+                    echo "[test-autorelease] invoked $*"
+                    """
+                ),
+                encoding="utf-8",
+            )
+            autorelease_script.chmod(0o755)
+            self.git(worktree_root, "add", ".workflow-kit/session_push_autorelease.sh")
+            self.git(
+                worktree_root,
+                "commit",
+                "--no-verify",
+                "-m",
+                "stub autorelease entrypoint",
+                env={"SKIP_POST_COMMIT_AUTOMATION": "1", **os.environ},
+            )
+
+            result = subprocess.run(
+                [str(worktree_root / ".githooks" / "post-commit")],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("[test-autorelease] invoked", result.stdout)
+            self.assertTrue(invocation_path.is_file())
+            args = invocation_path.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(
+                ["--source-branch", "codex/post-commit-autorelease", "--target", "main"],
+                args,
+            )
+
+    def test_session_push_autorelease_reports_pending_conflict_state_with_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/conflict-blocked",
+                worktree_suffix="conflict-blocked",
+            )
+
+            common_git_dir = Path(self.git(repo_root, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip())
+            state_file = common_git_dir / "codex_release_state.json"
+            state_file.write_text(
+                json.dumps(
+                    {
+                        "status": "conflict",
+                        "source_branch": "codex/conflict-blocked",
+                        "target_branch": "main",
+                        "source_worktree": str(worktree_root),
+                        "primary_root": str(repo_root),
+                        "merge_base_main_sha": self.git(repo_root, "rev-parse", "HEAD").stdout.strip(),
+                        "conflict_files": ["README.md"],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    str(worktree_root / ".workflow-kit" / "session_push_autorelease.sh"),
+                    "--source-branch",
+                    "codex/conflict-blocked",
+                    "--target",
+                    "main",
+                ],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(1, result.returncode)
+            self.assertIn("Pending conflict release state exists for codex/conflict-blocked -> main.", result.stderr)
+            self.assertIn(str(repo_root), result.stderr)
+            self.assertIn(str(worktree_root), result.stderr)
+            self.assertIn("./.workflow-kit/session_release_resume.sh", result.stderr)
+
+    def test_session_release_resume_reports_missing_state_with_guidance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/resume-missing-state",
+                worktree_suffix="resume-missing-state",
+            )
+
+            result = subprocess.run(
+                [str(worktree_root / ".workflow-kit" / "session_release_resume.sh")],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(1, result.returncode)
+            self.assertIn("No pending conflict release state file found", result.stderr)
+            self.assertIn("If auto-release was blocked in another worktree", result.stderr)
+            self.assertIn("./.workflow-kit/session_push_autorelease.sh", result.stderr)
+
+    def test_session_release_resume_reports_pending_merge_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/resume-pending-merge",
+                worktree_suffix="resume-pending-merge",
+            )
+            pending_path = worktree_root / "README.md"
+            pending_path.write_text(pending_path.read_text(encoding="utf-8") + "pending-merge\n", encoding="utf-8")
+            self.git(worktree_root, "add", "README.md")
+            self.git(
+                worktree_root,
+                "commit",
+                "--no-verify",
+                "-m",
+                "pending merge context",
+                env={"SKIP_POST_COMMIT_AUTOMATION": "1", **os.environ},
+            )
+
+            common_git_dir = Path(self.git(repo_root, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip())
+            state_file = common_git_dir / "codex_release_state.json"
+            state_file.write_text(
+                json.dumps(
+                    {
+                        "status": "conflict",
+                        "source_branch": "codex/resume-pending-merge",
+                        "target_branch": "main",
+                        "source_worktree": str(worktree_root),
+                        "primary_root": str(repo_root),
+                        "merge_base_main_sha": self.git(repo_root, "rev-parse", "HEAD").stdout.strip(),
+                        "conflict_files": ["README.md"],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [str(worktree_root / ".workflow-kit" / "session_release_resume.sh")],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(1, result.returncode)
+            self.assertIn("No active merge is present in the primary repository yet.", result.stderr)
+            self.assertIn("codex/resume-pending-merge", result.stderr)
+            self.assertIn("main", result.stderr)
+            self.assertIn(str(repo_root), result.stderr)
 
     def test_commit_msg_blocks_code_commit_until_exec_record_documents_test_and_review(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

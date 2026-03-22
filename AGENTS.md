@@ -35,7 +35,9 @@ python3 scripts/publish_release.py --profile full_codex_flow --version <new-vers
 - `scripts/apply_downstreams.py` 现在会在下游 worktree 中生成变更、完成自动审查，并在没有阻断问题时直接提交并 auto-release 合并到下游默认分支；若 auto-release 被环境条件阻塞，则保留本地 worktree 供恢复。
 - 中央仓库的 downstream apply 顺序固定为：`测试 -> 审查 -> commit -> push/auto-release -> apply_downstreams.py`。
 - `scripts/apply_downstreams.py` 现在支持 `--repo-id <RepoId>` 与 `--resume-existing-worktree`，用于单仓恢复失败的 fan-out worktree。
+- `.githooks/post-commit` 在 `codex/*` worktree 上会直接调用 `session_push_autorelease.sh`；`.githooks/pre-push` 仅作为手动 `git push` 的兼容入口继续保留。
 - `session_push_autorelease.sh` 会在 `<default-branch>` push 成功后再执行 `python3 scripts/apply_downstreams.py`，避免在 auto-release 前提早 fan-out。
+- auto-release 若因主仓 dirty、同步落后或 merge conflict 阻塞，应优先使用 `./.workflow-kit/session_release_resume.sh` 恢复，而不是在主仓手工补提交流程。
 - 为兼容旧版下游 runtime，中央 downstream apply 在调用子仓 `new_worktree.sh` 时会临时设置 `SKIP_SHARED_VENV_LINK=1`；待当前 release 应用完成后，再由新 runtime 补做共享 `.venv` 修复。
 - 下游 `AGENTS.md` 中散落的通用 workflow 章节会在 apply 时刷洗并收束到固定 managed block；块外应只保留仓库特有规则。
 - Therefore, “changed workflow source but did not publish release yet” is an invalid handoff state for downstream sync.

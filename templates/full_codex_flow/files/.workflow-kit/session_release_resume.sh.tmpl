@@ -34,7 +34,9 @@ STATE_FILE="$COMMON_GIT_DIR/codex_release_state.json"
 PRIMARY_ROOT="$(dirname "$COMMON_GIT_DIR")"
 
 if [[ ! -f "$STATE_FILE" ]]; then
-  echo "[session-release-resume] No pending conflict state file found: $STATE_FILE" >&2
+  echo "[session-release-resume] No pending conflict release state file found: $STATE_FILE" >&2
+  echo "[session-release-resume] If auto-release was blocked in another worktree, return to that codex/* worktree and rerun ./.workflow-kit/session_push_autorelease.sh." >&2
+  echo "[session-release-resume] If you expected an unresolved merge in the primary repo, inspect it with: git -C \"$PRIMARY_ROOT\" status --short" >&2
   exit 1
 fi
 
@@ -55,6 +57,7 @@ out("source_branch", data.get("source_branch", ""))
 out("target_branch", data.get("target_branch", ""))
 out("source_worktree", data.get("source_worktree", ""))
 out("merge_base_main_sha", data.get("merge_base_main_sha", ""))
+out("primary_root", data.get("primary_root", ""))
 PY
 )"
 
@@ -63,6 +66,7 @@ SOURCE_BRANCH="$(printf '%s\n' "$STATE_LINES" | awk -F= '$1=="source_branch" {pr
 TARGET_BRANCH="$(printf '%s\n' "$STATE_LINES" | awk -F= '$1=="target_branch" {print $2}')"
 SOURCE_WORKTREE="$(printf '%s\n' "$STATE_LINES" | awk -F= '$1=="source_worktree" {print $2}')"
 MERGE_BASE_MAIN_SHA="$(printf '%s\n' "$STATE_LINES" | awk -F= '$1=="merge_base_main_sha" {print $2}')"
+STATE_PRIMARY_ROOT="$(printf '%s\n' "$STATE_LINES" | awk -F= '$1=="primary_root" {print $2}')"
 
 if [[ "$STATUS" != "conflict" ]]; then
   echo "[session-release-resume] State status is not conflict: $STATUS" >&2
@@ -76,6 +80,7 @@ fi
 CURRENT_PRIMARY_BRANCH="$(git -C "$PRIMARY_ROOT" branch --show-current || true)"
 if [[ "$CURRENT_PRIMARY_BRANCH" != "$TARGET_BRANCH" ]]; then
   echo "[session-release-resume] Primary repo must be on ${TARGET_BRANCH}, current: ${CURRENT_PRIMARY_BRANCH:-DETACHED}" >&2
+  echo "[session-release-resume] Run: git -C \"$PRIMARY_ROOT\" checkout \"$TARGET_BRANCH\"" >&2
   exit 1
 fi
 
@@ -83,6 +88,7 @@ PRIMARY_HEAD_SHA="$(git -C "$PRIMARY_ROOT" rev-parse HEAD)"
 if [[ "$PRIMARY_HEAD_SHA" != "$MERGE_BASE_MAIN_SHA" ]]; then
   if git -C "$PRIMARY_ROOT" rev-parse --verify --quiet MERGE_HEAD >/dev/null; then
     echo "[session-release-resume] Merge context mismatch: expected base $MERGE_BASE_MAIN_SHA, current $PRIMARY_HEAD_SHA" >&2
+    echo "[session-release-resume] Inspect the primary repo before resuming: git -C \"$PRIMARY_ROOT\" status --short" >&2
     exit 1
   fi
 fi
@@ -94,6 +100,7 @@ if [[ -n "$CONFLICT_FILES" ]]; then
     [[ -z "$file" ]] && continue
     echo "  - $file" >&2
   done <<<"$CONFLICT_FILES"
+  echo "[session-release-resume] Resolve them in $PRIMARY_ROOT, git add the files, then rerun ./.workflow-kit/session_release_resume.sh from ${SOURCE_WORKTREE:-$ROOT}." >&2
   exit 1
 fi
 
@@ -103,7 +110,10 @@ if git -C "$PRIMARY_ROOT" rev-parse --verify --quiet MERGE_HEAD >/dev/null; then
 else
   if git -C "$PRIMARY_ROOT" show-ref --verify --quiet "refs/heads/${SOURCE_BRANCH}"; then
     if ! git -C "$PRIMARY_ROOT" merge-base --is-ancestor "$SOURCE_BRANCH" "$TARGET_BRANCH"; then
-      echo "[session-release-resume] No active merge and source branch is not merged into ${TARGET_BRANCH}." >&2
+      echo "[session-release-resume] No active merge is present in the primary repository yet." >&2
+      echo "[session-release-resume] Source branch ${SOURCE_BRANCH} is not merged into ${TARGET_BRANCH}." >&2
+      echo "[session-release-resume] Primary repo: ${STATE_PRIMARY_ROOT:-$PRIMARY_ROOT}" >&2
+      echo "[session-release-resume] Return to ${SOURCE_WORKTREE:-$ROOT} and rerun ./.workflow-kit/session_push_autorelease.sh --source-branch \"$SOURCE_BRANCH\" --target \"$TARGET_BRANCH\" after recreating the blocked merge context." >&2
       exit 1
     fi
   fi

@@ -102,7 +102,7 @@ PRIMARY_ROOT="$(dirname "$COMMON_GIT_DIR")"
 STATE_FILE="$COMMON_GIT_DIR/codex_release_state.json"
 
 if [[ -f "$STATE_FILE" ]]; then
-  state_status="$(python3 - "$STATE_FILE" <<'PY'
+  STATE_LINES="$(python3 - "$STATE_FILE" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -111,13 +111,34 @@ path = Path(sys.argv[1])
 try:
     data = json.loads(path.read_text(encoding="utf-8"))
 except Exception:
-    print("invalid")
+    print("status=invalid")
     raise SystemExit(0)
-print(str(data.get("status", "")))
+
+def out(key, value):
+    value = "" if value is None else str(value)
+    print(f"{key}={value}")
+
+out("status", data.get("status", ""))
+out("source_branch", data.get("source_branch", ""))
+out("target_branch", data.get("target_branch", ""))
+out("source_worktree", data.get("source_worktree", ""))
+out("primary_root", data.get("primary_root", ""))
 PY
 )"
+  state_status="$(printf '%s\n' "$STATE_LINES" | awk -F= '$1=="status" {print $2}')"
   if [[ "$state_status" == "conflict" ]]; then
-    echo "[session-push-autorelease] Pending conflict release state exists: $STATE_FILE" >&2
+    state_source_branch="$(printf '%s\n' "$STATE_LINES" | awk -F= '$1=="source_branch" {print $2}')"
+    state_target_branch="$(printf '%s\n' "$STATE_LINES" | awk -F= '$1=="target_branch" {print $2}')"
+    state_source_worktree="$(printf '%s\n' "$STATE_LINES" | awk -F= '$1=="source_worktree" {print $2}')"
+    state_primary_root="$(printf '%s\n' "$STATE_LINES" | awk -F= '$1=="primary_root" {print $2}')"
+    echo "[session-push-autorelease] Pending conflict release state exists for ${state_source_branch:-$SOURCE_BRANCH} -> ${state_target_branch:-$TARGET_BRANCH}." >&2
+    echo "[session-push-autorelease] State file: $STATE_FILE" >&2
+    if [[ -n "$state_primary_root" ]]; then
+      echo "[session-push-autorelease] Primary repo: $state_primary_root" >&2
+    fi
+    if [[ -n "$state_source_worktree" ]]; then
+      echo "[session-push-autorelease] Source worktree: $state_source_worktree" >&2
+    fi
     echo "[session-push-autorelease] Resolve conflict first: ./.workflow-kit/session_release_resume.sh" >&2
     exit 1
   fi
@@ -125,7 +146,7 @@ fi
 
 if [[ -n "$(git -C "$PRIMARY_ROOT" status --porcelain)" ]]; then
   echo "[session-push-autorelease] Primary repository is dirty: $PRIMARY_ROOT" >&2
-  echo "[session-push-autorelease] Clean it before auto release." >&2
+  echo "[session-push-autorelease] Clean it before auto release. Inspect with: git -C \"$PRIMARY_ROOT\" status --short" >&2
   exit 1
 fi
 
@@ -227,6 +248,8 @@ while IFS= read -r file; do
   [[ -z "$file" ]] && continue
   echo "  - $file"
 done <<<"$CONFLICT_FILES"
+echo "[session-push-autorelease] Primary repo: $PRIMARY_ROOT"
+echo "[session-push-autorelease] Source worktree: $ROOT"
 echo "[session-push-autorelease] Resume after resolving conflicts: ./.workflow-kit/session_release_resume.sh"
 echo "[session-push-autorelease] State file: $STATE_FILE"
 exit 1

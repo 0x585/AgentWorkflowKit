@@ -1,0 +1,22 @@
+[1027] fix(workflow): unify autorelease entrypoint
+
+# Changes
+# - Route `codex/*` post-commit automation directly into `session_push_autorelease.sh` instead of relying on a plain `git push`
+# - Improve autorelease / resume diagnostics for conflict, missing-state, and pending-merge recovery paths
+# - Publish workflow release `1.0.27` and update templates, lock manifest, docs, and regression tests
+
+# Tests
+# - 命令：python3 -m unittest tests.test_workflow_release
+# - 范围：中央 workflow 回归、模板导出、下游 apply / auto-release 路径，以及新增入口/恢复提示用例
+# - 结果：通过（40 tests）
+# - 未覆盖项：提交后的真实 auto-release / downstream apply 结果将在受管链路中继续验证
+# - 提交快照：c8492c36ed77190f8e9c3d66cc27107ea90d7d62732c77291e3c5d0dcc9e4c26
+
+# Review
+# - 审查方式：本地自审（源码 diff + 模板导出结果 + 测试覆盖面复核）
+# - 结论：通过；自动发布入口已统一，恢复提示更可操作
+# - 残余风险：中央源仓 `check_release` 对自身仍会显示 drift，这属于源码仓与 apply 形态差异，不影响 downstream release
+# - 提交快照：c8492c36ed77190f8e9c3d66cc27107ea90d7d62732c77291e3c5d0dcc9e4c26
+
+# Risks
+# - 如果 auto-release 在 merge / push / downstream apply 阶段阻塞，优先用 `./.workflow-kit/session_release_resume.sh` 恢复

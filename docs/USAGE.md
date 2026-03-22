@@ -183,19 +183,29 @@ python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/AgentTask 
 
 ```bash
 git commit
-git push
 ./.workflow-kit/session_push_autorelease.sh
 python3 scripts/apply_downstreams.py
 ```
 
 这表示：
 
-- `.githooks/post-commit` 在 `codex/*` 分支上只负责自动执行 `git push`
-- `.githooks/pre-push` 会接管这个 push，调用 `./.workflow-kit/session_push_autorelease.sh`
+- `.githooks/post-commit` 在 `codex/*` 分支上会直接调用 `./.workflow-kit/session_push_autorelease.sh`
+- `.githooks/pre-push` 继续保留，用于你手动执行 `git push` 时接管并改走同一条 autorelease 链路
 - `session_push_autorelease.sh` 会先完成 merge / push 默认分支，再调用 `python3 scripts/apply_downstreams.py`
 - 只要当前 release 工件是最新的，中央仓库 auto-release 成功后会自动为需要更新的下游仓库创建 fan-out worktree，完成自动审查，并在无阻塞问题时直接把下游变更 merge 到各自默认分支
 - 如果你只是修改了源码但还没有发布新的 release，这个自动动作会拒绝执行，并提示先发布
 - 如果某个下游仓库的 auto-release 被阻塞，对应 `workflow-release-*` worktree 会被保留，后续可在该子仓中继续恢复或手动处理
+
+发生阻塞时，优先使用：
+
+```bash
+./.workflow-kit/session_release_resume.sh
+```
+
+常见场景：
+
+- merge conflict 已经在主仓出现，解决冲突并 `git add` 后，回到 source worktree 执行上面的恢复命令
+- 自动发布提示主仓 dirty 或分支不同步，先按提示清理现场，再重新执行 `./.workflow-kit/session_push_autorelease.sh`
 
 如果你临时不想触发自动应用，可以在当前命令前加：
 
