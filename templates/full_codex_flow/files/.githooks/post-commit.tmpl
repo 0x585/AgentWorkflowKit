@@ -43,31 +43,33 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 0
 fi
 
-echo "[post-commit] Auto-pushing ${CURRENT_BRANCH} to trigger pre-push auto-release..."
+if [[ ! -x "$ROOT/.workflow-kit/session_push_autorelease.sh" ]]; then
+  echo "[post-commit] Missing autorelease entrypoint: $ROOT/.workflow-kit/session_push_autorelease.sh" >&2
+  exit 0
+fi
+
+echo "[post-commit] Auto-running session_push_autorelease for ${CURRENT_BRANCH} -> ${DEFAULT_BRANCH}..."
 
 set +e
-push_output="$(
+autorelease_output="$(
   env \
     -u GIT_DIR \
     -u GIT_WORK_TREE \
     -u GIT_INDEX_FILE \
     -u GIT_PREFIX \
-    git push 2>&1
+    "$ROOT/.workflow-kit/session_push_autorelease.sh" \
+      --source-branch "$CURRENT_BRANCH" \
+      --target "$DEFAULT_BRANCH" 2>&1
 )"
-push_exit=$?
+autorelease_exit=$?
 set -e
 
-printf '%s\n' "$push_output"
+printf '%s\n' "$autorelease_output"
 
-if [[ "$push_exit" -eq 0 ]]; then
+if [[ "$autorelease_exit" -eq 0 ]]; then
   exit 0
 fi
 
-if grep -q "\[pre-push\] Auto release completed\." <<<"$push_output" \
-  && grep -q "original push is intentionally canceled" <<<"$push_output"; then
-  echo "[post-commit] Auto-release completed. Original push cancellation is expected."
-  exit 0
-fi
-
-echo "[post-commit] Auto-push failed (exit=${push_exit}). Run git push manually to inspect." >&2
+echo "[post-commit] Auto-release entrypoint failed (exit=${autorelease_exit})." >&2
+echo "[post-commit] Resume with ./.workflow-kit/session_release_resume.sh or rerun ./.workflow-kit/session_push_autorelease.sh manually." >&2
 exit 0
