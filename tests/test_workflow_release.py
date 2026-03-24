@@ -82,6 +82,14 @@ class WorkflowReleaseTest(unittest.TestCase):
         exec_id: int,
         *,
         target_branch: str = "main",
+        summary: str = "测试 commit-msg hook 的代码变更提交流程校验。",
+        plan_complete: bool = True,
+        plan_work_type: str = "新需求",
+        plan_goal: str = "确认当前 exec 已完成开工登记并具备明确目标。",
+        plan_scope: str = "docs/exec_records、受管 hooks 与提交准备流程。",
+        plan_steps: str = "1. 填写 exec 记录 2. 运行相关校验 3. 确认输出符合预期",
+        plan_verification: str = "开工计划校验、commit-msg 校验与准备提交检查通过。",
+        plan_risk: str = "无额外已知阻塞。",
         tests_checked: bool = False,
         review_checked: bool = False,
         test_command: str = "TODO",
@@ -96,6 +104,12 @@ class WorkflowReleaseTest(unittest.TestCase):
     ) -> Path:
         tests_mark = "x" if tests_checked else " "
         review_mark = "x" if review_checked else " "
+        if not plan_complete:
+            plan_goal = "TODO"
+            plan_scope = "TODO"
+            plan_steps = "1. TODO"
+            plan_verification = "TODO"
+            plan_risk = "TODO"
         record_path = repo_root / "docs" / "exec_records" / f"{exec_id}.md"
         record_path.write_text(
             (
@@ -106,7 +120,14 @@ class WorkflowReleaseTest(unittest.TestCase):
                 f"- [{review_mark}] 若有代码修改：已完成变更审查并记录结论\n"
                 "- [ ] 若为代码任务：已 push / auto-release，并完成下游应用\n\n"
                 "## 需求摘要\n\n"
-                "测试 commit-msg hook 的代码变更提交流程校验。\n\n"
+                f"{summary}\n\n"
+                "## 开工计划\n\n"
+                f"- 工作类型：{plan_work_type}\n"
+                f"- 目标：{plan_goal}\n"
+                f"- 改动范围：{plan_scope}\n"
+                f"- 实施步骤：{plan_steps}\n"
+                f"- 预期验证：{plan_verification}\n"
+                f"- 已知风险/阻塞：{plan_risk}\n\n"
                 "## 变更文件\n\n"
                 "- TODO\n\n"
                 "## 变更说明\n\n"
@@ -132,6 +153,33 @@ class WorkflowReleaseTest(unittest.TestCase):
             encoding="utf-8",
         )
         return record_path
+
+    def complete_exec_plan(
+        self,
+        repo_root: Path,
+        exec_id: int,
+        *,
+        work_type: str = "新需求",
+        goal: str = "补齐开工计划并继续当前 exec。",
+        scope: str = "exec 记录、受管脚本与提交前检查。",
+        steps: str = "1. 更新开工计划 2. 运行校验 3. 继续当前任务",
+        verification: str = "开工计划校验脚本返回通过。",
+        risk: str = "无额外已知阻塞。",
+    ) -> None:
+        record_path = repo_root / "docs" / "exec_records" / f"{exec_id}.md"
+        text = record_path.read_text(encoding="utf-8")
+        replacements = {
+            "- 工作类型：TODO": f"- 工作类型：{work_type}",
+            "- 工作类型：新需求": f"- 工作类型：{work_type}",
+            "- 目标：TODO": f"- 目标：{goal}",
+            "- 改动范围：TODO": f"- 改动范围：{scope}",
+            "- 实施步骤：1. TODO": f"- 实施步骤：{steps}",
+            "- 预期验证：TODO": f"- 预期验证：{verification}",
+            "- 已知风险/阻塞：TODO": f"- 已知风险/阻塞：{risk}",
+        }
+        for source, target in replacements.items():
+            text = text.replace(source, target)
+        record_path.write_text(text, encoding="utf-8")
 
     def copy_runtime_sources(self, target_root: Path) -> None:
         shutil.copytree(self.workflow_root / ".workflow-kit", target_root / ".workflow-kit")
@@ -342,6 +390,12 @@ class WorkflowReleaseTest(unittest.TestCase):
         transit_paths = {entry["path"] for entry in lock_payload["repositories"]["AgentTransitStation"]["entries"]}
         self.assertIn(".workflow-kit/new_exec.sh", task_paths)
         self.assertIn(".workflow-kit/new_exec.sh", transit_paths)
+        self.assertIn(".workflow-kit/start_exec.sh", task_paths)
+        self.assertIn(".workflow-kit/start_exec.sh", transit_paths)
+        self.assertIn(".workflow-kit/check_exec_plan.py", task_paths)
+        self.assertIn(".workflow-kit/check_exec_plan.py", transit_paths)
+        self.assertIn(".workflow-kit/prepare_task_commit.sh", task_paths)
+        self.assertIn(".workflow-kit/prepare_task_commit.sh", transit_paths)
         self.assertIn(".workflow-kit/WORKFLOW_CONTRACT.md", task_paths)
         self.assertIn(".workflow-kit/WORKFLOW_CONTRACT.md", transit_paths)
         self.assertIn(".workflow-kit/ensure_shared_venv.sh", task_paths)
@@ -548,15 +602,35 @@ exec "$ROOT/.workflow-kit/new_branch.sh" "$@"
             new_exec_template = (
                 workflow_root / "templates" / "full_codex_flow" / "files" / ".workflow-kit" / "new_exec.sh.tmpl"
             ).read_text(encoding="utf-8")
+            self.assertIn("## 开工计划", new_exec_template)
+            self.assertIn("- 工作类型：新需求", new_exec_template)
             self.assertIn("若有代码修改：已执行测试并记录结果", new_exec_template)
             self.assertIn("- 提交快照：TODO", new_exec_template)
             self.assertIn("- 审查方式：TODO", new_exec_template)
             self.assertIn("# - 提交快照：TODO", new_exec_template)
 
+            start_exec_template = (
+                workflow_root / "templates" / "full_codex_flow" / "files" / ".workflow-kit" / "start_exec.sh.tmpl"
+            ).read_text(encoding="utf-8")
+            self.assertIn("--continue-exec", start_exec_template)
+            self.assertIn("check_exec_plan.py", start_exec_template)
+
+            prepare_task_commit_template = (
+                workflow_root
+                / "templates"
+                / "full_codex_flow"
+                / "files"
+                / ".workflow-kit"
+                / "prepare_task_commit.sh.tmpl"
+            ).read_text(encoding="utf-8")
+            self.assertIn("check_exec_plan.py", prepare_task_commit_template)
+            self.assertIn("prepare_commit.sh", prepare_task_commit_template)
+
             commit_msg_template = (
                 workflow_root / "templates" / "full_codex_flow" / "files" / ".githooks" / "commit-msg.tmpl"
             ).read_text(encoding="utf-8")
             self.assertIn("--check-commit-flow", commit_msg_template)
+            self.assertIn("check_exec_plan.py", commit_msg_template)
 
             contract_template = (
                 workflow_root
@@ -1213,6 +1287,69 @@ exit 42
             self.assertTrue(status_lines)
             self.assertTrue(all(not line.startswith("??") for line in status_lines))
 
+    def test_prepare_task_commit_checks_start_plan_before_prepare_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/prepare-task-commit",
+                worktree_suffix="prepare-task-commit",
+            )
+
+            readme_path = worktree_root / "README.md"
+            readme_path.write_text(readme_path.read_text(encoding="utf-8") + "plan-check\n", encoding="utf-8")
+
+            new_exec = subprocess.run(
+                [
+                    str(worktree_root / ".workflow-kit" / "new_exec.sh"),
+                    "--no-sync",
+                    "--json",
+                    "--summary",
+                    "docs(workflow): exercise prepare task commit",
+                ],
+                cwd=worktree_root,
+                check=True,
+                capture_output=True,
+                text=True,
+                env={"WORKFLOW_GUARD_ACTIVE": "1", **os.environ},
+            )
+            exec_id = int(json.loads(new_exec.stdout)["exec_id"])
+
+            blocked = subprocess.run(
+                [str(worktree_root / ".workflow-kit" / "prepare_task_commit.sh"), "--json"],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env={"WORKFLOW_GUARD_ACTIVE": "1", **os.environ},
+            )
+
+            self.assertEqual(2, blocked.returncode)
+            blocked_payload = json.loads(blocked.stdout)
+            self.assertFalse(blocked_payload["valid"])
+            self.assertEqual(exec_id, blocked_payload["exec_id"])
+
+            self.complete_exec_plan(worktree_root, exec_id)
+
+            ready = subprocess.run(
+                [str(worktree_root / ".workflow-kit" / "prepare_task_commit.sh"), "--stage", "--json"],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env={"WORKFLOW_GUARD_ACTIVE": "1", **os.environ},
+            )
+
+            self.assertEqual(0, ready.returncode)
+            ready_payload = json.loads(ready.stdout)
+            self.assertTrue(ready_payload["plan"]["valid"])
+            self.assertTrue(ready_payload["prepare_commit"]["ready"])
+
     def test_pre_commit_blocks_unstaged_until_prepare_commit_stages_all(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             temp_root = Path(tmp_dir)
@@ -1240,8 +1377,8 @@ exit 42
             )
 
             self.assertEqual(1, blocked.returncode)
-            self.assertIn("./.workflow-kit/prepare_commit.sh", blocked.stderr)
-            self.assertIn("./.workflow-kit/prepare_commit.sh --stage", blocked.stderr)
+            self.assertIn("./.workflow-kit/prepare_task_commit.sh", blocked.stderr)
+            self.assertIn("./.workflow-kit/prepare_task_commit.sh --stage", blocked.stderr)
 
             staged = subprocess.run(
                 [str(worktree_root / ".workflow-kit" / "prepare_commit.sh"), "--stage"],
@@ -1585,6 +1722,58 @@ exit 42
 
             self.assertEqual(0, allowed.returncode)
 
+    def test_commit_msg_blocks_commit_when_start_plan_is_incomplete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/commit-plan-check",
+                worktree_suffix="commit-plan-check",
+            )
+
+            code_path = worktree_root / "src" / "main" / "python" / "temp_repo" / "feature.py"
+            code_path.parent.mkdir(parents=True, exist_ok=True)
+            code_path.write_text("PLAN_REQUIRED = True\n", encoding="utf-8")
+            self.git(worktree_root, "add", str(code_path.relative_to(worktree_root)))
+            snapshot = self.staged_snapshot(worktree_root)
+
+            exec_id = 2006
+            self.write_exec_record(
+                worktree_root,
+                exec_id,
+                plan_complete=False,
+                tests_checked=True,
+                review_checked=True,
+                test_command="python3 -m unittest",
+                test_scope="src/main/python/temp_repo/feature.py",
+                test_result="通过",
+                test_uncovered="无",
+                test_snapshot=snapshot,
+                review_method="自审",
+                review_conclusion="通过",
+                review_risk="无",
+                review_snapshot=snapshot,
+            )
+            message_file = worktree_root / "COMMIT_MSG"
+            message_file.write_text(f"[{exec_id}] feat(workflow): require start plan\n", encoding="utf-8")
+
+            blocked = subprocess.run(
+                [str(worktree_root / ".githooks" / "commit-msg"), str(message_file)],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(2, blocked.returncode)
+            self.assertIn("开工计划未完成", blocked.stderr)
+            self.assertIn("章节字段未完成：## 开工计划 / 目标", blocked.stderr)
+
     def test_commit_msg_blocks_code_commit_when_snapshot_is_stale(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             temp_root = Path(tmp_dir)
@@ -1745,6 +1934,119 @@ exit 42
             self.assertEqual(snapshot, payload["current_staged_snapshot"])
             record_text = (worktree_root / "docs" / "exec_records" / f"{exec_id}.md").read_text(encoding="utf-8")
             self.assertEqual(2, record_text.count(f"- 提交快照：{snapshot}"))
+
+    def test_start_exec_creates_exec_with_summary_and_requires_plan_completion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/start-exec-new",
+                worktree_suffix="start-exec-new",
+            )
+
+            first = subprocess.run(
+                [str(worktree_root / ".workflow-kit" / "start_exec.sh"), "--no-sync", "feat(workflow): require start plan"],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env={"WORKFLOW_GUARD_ACTIVE": "1", **os.environ},
+            )
+
+            self.assertEqual(2, first.returncode)
+            record_path = next((worktree_root / "docs" / "exec_records").glob("[0-9][0-9][0-9][0-9]*.md"))
+            record_text = record_path.read_text(encoding="utf-8")
+            self.assertIn("## 开工计划", record_text)
+            self.assertIn("- 工作类型：新需求", record_text)
+            self.assertIn("feat(workflow): require start plan", record_text)
+            index_text = (worktree_root / "docs" / "exec_records" / "INDEX.md").read_text(encoding="utf-8")
+            self.assertIn("feat(workflow): require start plan", index_text)
+            self.assertNotIn("| TODO |", index_text)
+
+            exec_id = int(record_path.stem)
+            self.complete_exec_plan(worktree_root, exec_id)
+
+            second = subprocess.run(
+                [str(worktree_root / ".workflow-kit" / "start_exec.sh"), "--no-sync", "feat(workflow): require start plan"],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env={"WORKFLOW_GUARD_ACTIVE": "1", **os.environ},
+            )
+
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertIn(f"Execution ID: {exec_id}", second.stdout)
+
+    def test_start_exec_continue_is_explicit_and_reuses_same_exec(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/start-exec-continue",
+                worktree_suffix="start-exec-continue",
+            )
+
+            new_exec = subprocess.run(
+                [
+                    str(worktree_root / ".workflow-kit" / "new_exec.sh"),
+                    "--no-sync",
+                    "--json",
+                    "--summary",
+                    "fix(workflow): resume existing task",
+                ],
+                cwd=worktree_root,
+                check=True,
+                capture_output=True,
+                text=True,
+                env={"WORKFLOW_GUARD_ACTIVE": "1", **os.environ},
+            )
+            exec_id = int(json.loads(new_exec.stdout)["exec_id"])
+
+            first = subprocess.run(
+                [str(worktree_root / ".workflow-kit" / "start_exec.sh"), "--continue-exec", str(exec_id)],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env={"WORKFLOW_GUARD_ACTIVE": "1", **os.environ},
+            )
+
+            self.assertEqual(2, first.returncode)
+            record_text = (worktree_root / "docs" / "exec_records" / f"{exec_id}.md").read_text(encoding="utf-8")
+            self.assertIn(f"- 工作类型：续作(codex/start-exec-continue/{exec_id})", record_text)
+            self.assertEqual(
+                1,
+                len(list((worktree_root / "docs" / "exec_records").glob("[0-9][0-9][0-9][0-9]*.md"))),
+            )
+
+            self.complete_exec_plan(
+                worktree_root,
+                exec_id,
+                work_type=f"续作(codex/start-exec-continue/{exec_id})",
+            )
+
+            second = subprocess.run(
+                [str(worktree_root / ".workflow-kit" / "start_exec.sh"), "--continue-exec", str(exec_id)],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env={"WORKFLOW_GUARD_ACTIVE": "1", **os.environ},
+            )
+
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertIn(f"Execution ID: {exec_id}", second.stdout)
 
     def test_commit_msg_allows_docs_only_commit_without_code_review_sections(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1995,7 +2297,12 @@ fi
                 worktree_suffix="workflow-release-1-0-1",
             )
             subprocess.run(
-                [str(existing_worktree / ".workflow-kit" / "new_exec.sh"), "--no-sync"],
+                [
+                    str(existing_worktree / ".workflow-kit" / "new_exec.sh"),
+                    "--no-sync",
+                    "--summary",
+                    "chore(workflow): resume downstream release worktree",
+                ],
                 cwd=existing_worktree,
                 check=True,
                 capture_output=True,
@@ -2076,7 +2383,12 @@ fi
                 worktree_suffix="workflow-release-1-0-1",
             )
             subprocess.run(
-                [str(existing_worktree / ".workflow-kit" / "new_exec.sh"), "--no-sync"],
+                [
+                    str(existing_worktree / ".workflow-kit" / "new_exec.sh"),
+                    "--no-sync",
+                    "--summary",
+                    "chore(workflow): resume downstream release worktree",
+                ],
                 cwd=existing_worktree,
                 check=True,
                 capture_output=True,

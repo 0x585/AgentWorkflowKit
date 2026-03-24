@@ -1,0 +1,21 @@
+[1028] feat(workflow): require explicit start plan and continuation
+
+# Changes
+# - add managed start-plan runtime entrypoints and commit-time validation
+# - publish full_codex_flow@1.0.29 and apply it to AgentTask / AgentTransitStation
+
+# Tests
+# - 命令：python3 -m unittest tests.test_workflow_release; python3 scripts/export_templates.py --repo-id AgentWorkflowKit; python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.29; git diff --check; python3 scripts/apply_downstreams.py
+# - 范围：central managed workflow runtime, release artifacts, downstream compatibility and fan-out apply
+# - 结果：通过；44 tests passed；1.0.29 published；AgentTask / AgentTransitStation released
+# - 未覆盖项：central post-commit auto-release hook has not been re-exercised after this commit yet
+# - 提交快照：TODO
+
+# Review
+# - 审查方式：人工自审关键脚本、hook、文档和兼容逻辑 diff
+# - 结论：phase 2 目标已达成，旧下游 runtime 兼容路径已验证
+# - 残余风险：历史 exec index 占位摘要行不会自动回填；多活动 exec 会按设计被拒绝
+# - 提交快照：TODO
+
+# Risks
+# - if the central post-commit autorelease chain diverges from the manual pre-commit apply result, resume with ./.workflow-kit/session_release_resume.sh

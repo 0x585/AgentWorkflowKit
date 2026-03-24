@@ -91,10 +91,17 @@
 
 中央仓和下游仓统一遵循 `./.workflow-kit/WORKFLOW_CONTRACT.md` 中的完整执行规则。这里仅保留维护中央仓时最常用的两个收口入口：
 
-- `./.workflow-kit/prepare_commit.sh`
+- `./.workflow-kit/start_exec.sh "<summary>"`
+- `./.workflow-kit/prepare_task_commit.sh`
 - `python3 ./.workflow-kit/exec_record_hygiene.py --sync-staged-snapshot --exec-id <exec_id>`
 
-对代码任务，只要 `验证结果`、`审查结果` 都已完成，且没有剩余 commit gate 阻塞，Codex 默认应在当前回合继续执行 `./.workflow-kit/prepare_commit.sh` 与 `git commit`，不要停在“已修改但未 commit”的状态；只有用户明确要求暂停，或 gate 尚未通过时，才保留未提交现场。
+对代码任务，先通过 `./.workflow-kit/start_exec.sh "<summary>"` 建立或确认当前 exec，并补齐 `## 开工计划`；只有 `开工计划` 校验通过后，才进入正式编码流程。若用户明确说明“继续原 worktree / 原 exec”，则显式使用 `./.workflow-kit/start_exec.sh --continue-exec <exec_id>`；不再为每个新需求自动扫描旧分支。
+
+对代码任务，只要 `开工计划`、`验证结果`、`审查结果` 都已完成，且没有剩余 commit gate 阻塞，Codex 默认应在当前回合继续执行 `./.workflow-kit/prepare_task_commit.sh` 与 `git commit`，不要停在“已修改但未 commit”的状态；只有用户明确要求暂停，或 gate 尚未通过时，才保留未提交现场。
+
+纯文档任务只要走 exec / commit 流，也同样必须补齐 `## 开工计划`；只有不产生代码或提交的纯问答/排障讨论，才不要求创建 exec。
+
+`new_exec.sh` 与 `prepare_commit.sh` 仍保留为底层 runtime 工具，但不再作为日常代码任务的推荐直达入口。
 
 执行记录里的结构化字段仍然必须保留固定表头，例如 `- 命令：...`、`- 范围：...`、`- 结果：...`、`- 未覆盖项：...`，但字段正文不再要求必须单行；如果一行放不下，可以直接在后续行继续补充说明。
 
@@ -133,6 +140,7 @@ python3 scripts/apply_release.py --repo-root /Users/pi/PyCharmProject/AgentTask 
 - 生成下游仓库的 `.workflow-kit/`
 - 生成下游仓库的 `.githooks/`
 - 让 `new_worktree` / `post-checkout` / `new_exec` 自动修复 worktree 的共享 `.venv` 软链接
+- `new_worktree` 现在只负责创建 worktree；进入 worktree 后应显式运行 `./.workflow-kit/start_exec.sh "<summary>"`
 - 同步维护 worktree 级 `.git/info/exclude`，让共享 `.venv` 软链接不会出现在 `git status` 中
 - 生成下游仓库的 `src/main/python/<python_package_name>/tooling/service/public_work_register_service.py`
 - 删除旧版受管 workflow 入口文件
@@ -341,7 +349,7 @@ python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/MyNewApp -
 
 ### 8.2 为什么项目 `.venv` 不建议纳入版本控制？
 
-因为 `.venv` 是本地运行时产物，强依赖机器环境、Python 小版本和二进制依赖。把它放进 Git 会显著放大仓库体积和提交噪音。当前 workflow 改为在新 worktree 创建、`codex/*` checkout 和 `new_exec` 时自动修复指向主仓共享环境的 `.venv` 软链接，用共享环境解决 worktree 缺少解释器的问题。
+因为 `.venv` 是本地运行时产物，强依赖机器环境、Python 小版本和二进制依赖。把它放进 Git 会显著放大仓库体积和提交噪音。当前 workflow 改为在新 worktree 创建、`codex/*` checkout、`start_exec` / `new_exec` 时自动修复指向主仓共享环境的 `.venv` 软链接，用共享环境解决 worktree 缺少解释器的问题。
 
 ### 8.3 为什么保留了下游的 `scripts/`？
 

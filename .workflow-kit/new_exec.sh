@@ -15,19 +15,37 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  ./.workflow-kit/new_exec.sh [--no-sync]
+  ./.workflow-kit/new_exec.sh [--no-sync] [--json] --summary <summary>
+  ./.workflow-kit/new_exec.sh [--no-sync] [--json] <summary>
 
 Options:
-  --no-sync   Skip default session sync (internal/special flows only)
-  -h, --help  Show help
+  --summary <text>  One-line summary written to the exec record and INDEX row.
+  --no-sync         Skip default session sync (internal/special flows only).
+  --json            Emit machine-friendly JSON instead of text.
+  -h, --help        Show help.
 USAGE
 }
 
 RUN_SYNC=1
+JSON_OUTPUT=0
+SUMMARY=""
+
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
+    --summary)
+      if [[ "$#" -lt 2 ]]; then
+        echo "[new-exec] Missing value for --summary" >&2
+        exit 1
+      fi
+      SUMMARY="$2"
+      shift 2
+      ;;
     --no-sync)
       RUN_SYNC=0
+      shift
+      ;;
+    --json)
+      JSON_OUTPUT=1
       shift
       ;;
     -h|--help)
@@ -35,15 +53,29 @@ while [[ "$#" -gt 0 ]]; do
       exit 0
       ;;
     *)
-      echo "Unknown argument: $1" >&2
-      usage >&2
-      exit 1
+      if [[ -n "$SUMMARY" ]]; then
+        echo "[new-exec] Unexpected extra argument: $1" >&2
+        usage >&2
+        exit 1
+      fi
+      SUMMARY="$1"
+      shift
       ;;
   esac
 done
 
-ROOT=$(git rev-parse --show-toplevel)
-ASSERT_PURPOSE=code "$ROOT/.workflow-kit/assert_workspace.sh"
+if [[ -z "$SUMMARY" ]]; then
+  echo "[new-exec] A one-line summary is required." >&2
+  usage >&2
+  exit 1
+fi
+
+ROOT="$(git rev-parse --show-toplevel)"
+if [[ "$JSON_OUTPUT" -eq 1 ]]; then
+  ASSERT_PURPOSE=code "$ROOT/.workflow-kit/assert_workspace.sh" >/dev/null
+else
+  ASSERT_PURPOSE=code "$ROOT/.workflow-kit/assert_workspace.sh"
+fi
 INDEX_FILE="$ROOT/docs/exec_records/INDEX.md"
 TARGET_BRANCH="$("$ROOT/.workflow-kit/git_default_branch.sh" "$ROOT")"
 if [[ -x "$ROOT/.workflow-kit/ensure_shared_venv.sh" ]]; then
@@ -60,6 +92,10 @@ if [[ -x "$ROOT/scripts/python_bin.sh" ]]; then
 else
   PYTHON_BIN="${PYTHON_BIN:-$(command -v python3)}"
 fi
+if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
+  echo "[new-exec] Python runtime not available." >&2
+  exit 1
+fi
 
 branch="$(git branch --show-current)"
 if [[ "$branch" == "$TARGET_BRANCH" ]]; then
@@ -69,31 +105,13 @@ if [[ "$branch" == "$TARGET_BRANCH" ]]; then
 fi
 
 if [[ "$RUN_SYNC" -eq 1 ]]; then
-  echo "[new-exec] Syncing current branch to latest origin/${TARGET_BRANCH} ..."
-  "$ROOT/.workflow-kit/session_sync.sh" "$TARGET_BRANCH"
-fi
-
-hygiene_json="$("$ROOT/.workflow-kit/exec_record_hygiene.py" --target-branch "$TARGET_BRANCH" --apply --reuse-latest)"
-reusable_exec_id="$(
-  HYGIENE_JSON="$hygiene_json" "$PYTHON_BIN" - <<'PY'
-from __future__ import annotations
-
-import json
-import os
-
-payload = json.loads(os.environ["HYGIENE_JSON"])
-value = payload.get("reusable_exec_id")
-print("" if value is None else str(value))
-PY
-)"
-if [[ -n "$reusable_exec_id" ]]; then
-  record_file="$ROOT/docs/exec_records/${reusable_exec_id}.md"
-  commit_template_file="$ROOT/docs/exec_records/${reusable_exec_id}_commit.txt"
-  echo "[new-exec] Reusing existing execution placeholder: $reusable_exec_id"
-  echo "Execution ID: $reusable_exec_id"
-  echo "Execution record path: $record_file"
-  echo "Commit template path: $commit_template_file"
-  exit 0
+  if [[ "$JSON_OUTPUT" -eq 1 ]]; then
+    echo "[new-exec] Syncing current branch to latest origin/${TARGET_BRANCH} ..." >&2
+    "$ROOT/.workflow-kit/session_sync.sh" "$TARGET_BRANCH" >&2
+  else
+    echo "[new-exec] Syncing current branch to latest origin/${TARGET_BRANCH} ..."
+    "$ROOT/.workflow-kit/session_sync.sh" "$TARGET_BRANCH"
+  fi
 fi
 
 COMMON_GIT_DIR="$(git rev-parse --path-format=absolute --git-common-dir)"
@@ -129,9 +147,8 @@ def _max_id_from_index(path: Path) -> int:
     text = path.read_text(encoding="utf-8")
     max_id = 1000
     for line in text.splitlines():
-        line = line.strip()
-        match = re.match(r"^\|\s*([0-9]{4,})\s*\|", line)
-        if match:
+        match = re.match(r"^\|\s*([0-9]{4,})\s*\|", line.strip())
+        if match is not None:
             max_id = max(max_id, int(match.group(1)))
     return max(1001, max_id + 1)
 
@@ -144,7 +161,7 @@ def _max_record_id(records_dir: Path) -> int:
         if not item.is_file():
             continue
         match = re.fullmatch(r"([0-9]{4,})\.md", item.name)
-        if match:
+        if match is not None:
             max_id = max(max_id, int(match.group(1)))
     return max_id
 
@@ -162,7 +179,7 @@ def _max_commit_id(repo_root: str) -> int:
     max_id = 1000
     for line in output.splitlines():
         match = re.match(r"^\[([0-9]{4,})\]\s", line.strip())
-        if match:
+        if match is not None:
             max_id = max(max_id, int(match.group(1)))
     return max_id
 
@@ -193,7 +210,7 @@ if [[ -f "$record_file" ]]; then
   exit 1
 fi
 
-date_str=$(date +%F)
+date_str="$(date +%F)"
 commit_template_file="$ROOT/docs/exec_records/${current_id}_commit.txt"
 
 cat <<EOF2 > "$record_file"
@@ -208,7 +225,16 @@ cat <<EOF2 > "$record_file"
 
 ## 需求摘要
 
-TODO
+${SUMMARY}
+
+## 开工计划
+
+- 工作类型：新需求
+- 目标：TODO
+- 改动范围：TODO
+- 实施步骤：1. TODO
+- 预期验证：TODO
+- 已知风险/阻塞：TODO
 
 ## 变更文件
 
@@ -269,32 +295,35 @@ cat <<EOF2 > "$commit_template_file"
 # - TODO
 EOF2
 
-CURRENT_ID="$current_id" DATE_STR="$date_str" INDEX_FILE="$INDEX_FILE" "$PYTHON_BIN" - <<'PY'
-from pathlib import Path
+CURRENT_ID="$current_id" DATE_STR="$date_str" INDEX_FILE="$INDEX_FILE" SUMMARY_TEXT="$SUMMARY" "$PYTHON_BIN" - <<'PY'
+from __future__ import annotations
+
 import os
 import re
+from pathlib import Path
 
 index_path = Path(os.environ["INDEX_FILE"])
 current_id = int(os.environ["CURRENT_ID"])
 date_str = os.environ["DATE_STR"]
+summary_text = os.environ["SUMMARY_TEXT"]
 
-text = index_path.read_text(encoding="utf-8")
-lines = text.splitlines()
-
-output = []
+lines = index_path.read_text(encoding="utf-8").splitlines()
+output: list[str] = []
 existing_row = False
 row_pattern = re.compile(rf"^\|\s*{current_id}\s*\|")
-new_row = f"| {current_id} | {date_str} | TODO |"
+new_row = f"| {current_id} | {date_str} | {summary_text} |"
 inserted = False
 
 for line in lines:
     stripped = line.strip()
     if row_pattern.match(stripped):
         existing_row = True
+        output.append(new_row)
+        continue
     if re.fullmatch(r"`([0-9]{4,})`", stripped):
         continue
     output.append(line)
-    if not inserted and line.strip() == "|---|---|---|" and not existing_row:
+    if not inserted and stripped == "|---|---|---|" and not existing_row:
         output.append(new_row)
         inserted = True
 
@@ -308,6 +337,29 @@ if [[ -x "$ROOT/.workflow-kit/public_work_register_sync.py" ]]; then
   "$ROOT/.workflow-kit/public_work_register_sync.py" >/dev/null
 fi
 
+if [[ "$JSON_OUTPUT" -eq 1 ]]; then
+  CURRENT_ID="$current_id" RECORD_FILE="$record_file" COMMIT_TEMPLATE_FILE="$commit_template_file" SUMMARY_TEXT="$SUMMARY" "$PYTHON_BIN" - <<'PY'
+from __future__ import annotations
+
+import json
+import os
+
+print(
+    json.dumps(
+        {
+            "exec_id": int(os.environ["CURRENT_ID"]),
+            "record_path": os.environ["RECORD_FILE"],
+            "commit_template_path": os.environ["COMMIT_TEMPLATE_FILE"],
+            "summary": os.environ["SUMMARY_TEXT"],
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+)
+PY
+  exit 0
+fi
+
 echo "Execution ID: $current_id"
-echo "New execution record created: $record_file"
-echo "Commit template created: $commit_template_file"
+echo "Execution record path: $record_file"
+echo "Commit template path: $commit_template_file"

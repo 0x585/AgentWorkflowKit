@@ -26,5 +26,7 @@
 ## 使用建议
 
 - 如果某项要立即推进，把 `Decision` 保持为 `EXECUTE`
+- 领取待办后，先运行 `./.workflow-kit/start_exec.sh "<summary>"` 并补齐 `docs/exec_records/<id>.md` 中的 `## 开工计划`，再开始正式改代码
+- 若只是继续当前 worktree 的同一条未完成任务，必须显式使用 `./.workflow-kit/start_exec.sh --continue-exec <id>`；不依赖隐式 branch 发现
 - 如果某项本阶段先不做，把 `Decision` 改成 `DEFER`
 - 如果确认不再需要，把 `Decision` 改成 `DROP`
