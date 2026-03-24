@@ -102,6 +102,12 @@
     },
     {
       "type": "file",
+      "output": ".workflow-kit/start_exec.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/start_exec.sh.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
       "output": ".workflow-kit/session_sync.sh",
       "template": "templates/full_codex_flow/files/.workflow-kit/session_sync.sh.tmpl",
       "executable": true
@@ -145,6 +151,18 @@
       "type": "file",
       "output": ".workflow-kit/exec_record_hygiene.py",
       "template": "templates/full_codex_flow/files/.workflow-kit/exec_record_hygiene.py.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/check_exec_plan.py",
+      "template": "templates/full_codex_flow/files/.workflow-kit/check_exec_plan.py.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
+      "output": ".workflow-kit/prepare_task_commit.sh",
+      "template": "templates/full_codex_flow/files/.workflow-kit/prepare_task_commit.sh.tmpl",
       "executable": true
     },
     {

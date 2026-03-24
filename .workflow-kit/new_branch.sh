@@ -108,4 +108,4 @@ if [[ "$branch_name" == codex/* ]]; then
   git config "branch.${branch_name}.merge" "refs/heads/${branch_name}"
 fi
 
-echo "Next step: ./.workflow-kit/new_exec.sh (or prefer ./.workflow-kit/new_worktree.sh for parallel work)"
+echo "Next step: ./.workflow-kit/start_exec.sh \"one-line summary\" (or prefer ./.workflow-kit/new_worktree.sh for parallel work)"

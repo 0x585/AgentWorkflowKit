@@ -2,6 +2,7 @@
 
 | ID | Date | Summary |
 |---|---|---|
+| 1028 | 2026-03-25 | feat(workflow): require explicit start plan and continuation |
 | 1027 | 2026-03-23 | fix(workflow): unify autorelease entrypoint |
 | 1026 | 2026-03-22 | fix(workflow): allow multiline exec record fields |
 | 1025 | 2026-03-21 | feat(workflow): auto-release downstream applies |

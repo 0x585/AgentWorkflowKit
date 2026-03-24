@@ -49,8 +49,8 @@ if [[ "${SKIP_PREPARE_COMMIT_GUARD:-0}" != "1" ]]; then
   if [[ "$prepare_exit" -eq 2 ]]; then
     printf '%s\n' "$prepare_output" >&2
     echo "[pre-commit] Commit blocked: unstaged or untracked changes remain." >&2
-    echo "[pre-commit] Run: ./.workflow-kit/prepare_commit.sh" >&2
-    echo "[pre-commit] Or stage all changes: ./.workflow-kit/prepare_commit.sh --stage" >&2
+    echo "[pre-commit] Run: ./.workflow-kit/prepare_task_commit.sh" >&2
+    echo "[pre-commit] Or stage all changes: ./.workflow-kit/prepare_task_commit.sh --stage" >&2
     echo "[pre-commit] Special-case bypass only: SKIP_PREPARE_COMMIT_GUARD=1 git commit ..." >&2
     exit 1
   fi

@@ -43,7 +43,7 @@ if [[ -n "$exec_id" ]]; then
   record_file="$ROOT/docs/exec_records/${exec_id}.md"
   if [[ ! -f "$record_file" ]]; then
     echo "Execution record missing: $record_file" >&2
-    echo "Run ./.workflow-kit/new_exec.sh on your task branch before commit." >&2
+    echo "Run ./.workflow-kit/start_exec.sh on your task branch before commit." >&2
     exit 1
   fi
 
@@ -53,7 +53,7 @@ if [[ -n "$exec_id" ]]; then
       END { exit(found ? 0 : 1) }
     '; then
     echo "Execution ID [${exec_id}] already exists in commit history." >&2
-    echo "Allocate a new one: ./.workflow-kit/new_exec.sh" >&2
+    echo "Allocate a new one: ./.workflow-kit/start_exec.sh \"one-line summary\"" >&2
     exit 1
   fi
 
@@ -67,6 +67,8 @@ if [[ -n "$exec_id" ]]; then
     [[ -z "$path" ]] && continue
     staged_paths+=("$path")
   done < <(git diff --cached --name-only --diff-filter=ACMR)
+
+  "$ROOT/.workflow-kit/check_exec_plan.py" --exec-id "$exec_id"
 
   validate_cmd=(
     "$PYTHON_BIN"

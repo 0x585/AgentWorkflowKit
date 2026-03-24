@@ -26,6 +26,7 @@ MANAGED_RUNTIME_BASENAMES = (
     "new_worktree.sh",
     "ensure_shared_venv.sh",
     "new_exec.sh",
+    "start_exec.sh",
     "session_sync.sh",
     "session_sync_status.sh",
     "session_push_autorelease.sh",
@@ -33,6 +34,8 @@ MANAGED_RUNTIME_BASENAMES = (
     "public_work_register_sync.py",
     "public_work_register_claim.py",
     "exec_record_hygiene.py",
+    "check_exec_plan.py",
+    "prepare_task_commit.sh",
     "pending_worklist_autoclean.py",
 )
 SHARED_VENV_NAMES = (
@@ -992,13 +995,41 @@ def _downstream_issue_slug(workflow_version: str) -> str:
     return f"workflow-release-{suffix}"
 
 
-def _parse_new_worktree_output(output: str) -> tuple[str, Path, str]:
+def _parse_new_worktree_output(output: str) -> tuple[str, Path]:
     branch_match = re.search(r"(?m)^  branch:\s+(.+)$", output)
     path_match = re.search(r"(?m)^  path:\s+(.+)$", output)
-    exec_match = re.search(r"(?m)^  exec:\s+([0-9]{4,})$", output)
-    if branch_match is None or path_match is None or exec_match is None:
+    if branch_match is None or path_match is None:
         raise RuntimeError(f"unable to parse downstream worktree creation output:\n{output.strip()}")
-    return branch_match.group(1).strip(), Path(path_match.group(1).strip()), exec_match.group(1).strip()
+    return branch_match.group(1).strip(), Path(path_match.group(1).strip())
+
+
+def _parse_new_exec_output(output: str) -> str:
+    exec_match = re.search(r"(?m)^Execution ID:\s+([0-9]{4,})$", output)
+    if exec_match is None:
+        raise RuntimeError(f"unable to parse execution id from output:\n{output.strip()}")
+    return exec_match.group(1).strip()
+
+
+def _create_exec_in_worktree(worktree_root: Path, summary_text: str) -> str:
+    script_path = worktree_root / MANAGED_WORKFLOW_DIR / "new_exec.sh"
+    env = {**os.environ, "WORKFLOW_GUARD_ACTIVE": "1", "PYTHONDONTWRITEBYTECODE": "1"}
+    try:
+        process = _run_command(
+            [
+                str(script_path),
+                "--no-sync",
+                "--json",
+                "--summary",
+                summary_text,
+            ],
+            cwd=worktree_root,
+            env=env,
+        )
+        payload = json.loads(process.stdout)
+        return str(payload["exec_id"])
+    except Exception:
+        process = _run_command([str(script_path), "--no-sync"], cwd=worktree_root, env=env)
+        return _parse_new_exec_output(_command_output_summary(process) or process.stdout)
 
 
 def _find_worktree_for_branch(primary_repo_root: Path, branch: str) -> Path | None:
@@ -1023,6 +1054,23 @@ def _find_worktree_for_branch(primary_repo_root: Path, branch: str) -> Path | No
 
 
 def _discover_resume_exec_id(worktree_root: Path) -> str | None:
+    active_exec_ids: list[int] = []
+    seen: set[int] = set()
+    pattern = re.compile(r"^docs/exec_records/([0-9]{4,})(?:_commit\.txt|\.md)$")
+    for path in _git_status_paths(worktree_root):
+        match = pattern.fullmatch(path)
+        if match is None:
+            continue
+        exec_id = int(match.group(1))
+        if exec_id in seen:
+            continue
+        seen.add(exec_id)
+        active_exec_ids.append(exec_id)
+    if len(active_exec_ids) == 1:
+        return str(active_exec_ids[0])
+    if len(active_exec_ids) > 1:
+        raise RuntimeError(f"multiple active exec records found in worktree: {worktree_root}")
+
     index_path = worktree_root / "docs" / "exec_records" / "INDEX.md"
     if not index_path.is_file():
         return None
@@ -1090,6 +1138,12 @@ def _write_downstream_exec_record(
         summary_text = (
             f"将中央仓库当前发布的 `{profile}@{workflow_version}` 应用到 `{repo_id}`，并在自动审查通过后直接尝试 merge 到 `{default_branch}`。"
         )
+        plan_steps = (
+            "1. 创建下游受管 worktree。 "
+            "2. 应用当前 release 到子仓。 "
+            "3. 运行 `git diff --check` 与 `check_release.py` 自动审查。 "
+            f"4. 在审查通过后提交并尝试 auto-release 到 `{default_branch}`。"
+        )
         change_notes = (
             f"- 通过受管 worktree 提交流程下推 `{profile}@{workflow_version}`。\n"
             f"- 自动审查未发现阻断问题时，commit 后会直接尝试 auto-release merge 到 `{default_branch}`。\n"
@@ -1106,6 +1160,12 @@ def _write_downstream_exec_record(
     else:
         dod_goal = "- [x] 需求目标已明确（本次只做本地提交，不自动 push/release）\n"
         summary_text = f"将中央仓库当前发布的 `{profile}@{workflow_version}` 应用到 `{repo_id}`，并在子仓库 worktree 中生成本地提交。"
+        plan_steps = (
+            "1. 创建下游受管 worktree。 "
+            "2. 应用当前 release 到子仓。 "
+            "3. 完成自动审查并写入 exec 记录。 "
+            "4. 保留本地 worktree，等待后续人工 push/release。"
+        )
         change_notes = (
             f"- 通过受管 worktree 提交流程下推 `{profile}@{workflow_version}`。\n"
             "- 保留 worktree 供后续人工检查、push 或 release。\n"
@@ -1126,6 +1186,13 @@ def _write_downstream_exec_record(
             f"{final_goal}"
             "## 需求摘要\n\n"
             f"{summary_text}\n\n"
+            "## 开工计划\n\n"
+            "- 工作类型：新需求\n"
+            f"- 目标：将 `{profile}@{workflow_version}` 应用到 `{repo_id}`。\n"
+            "- 改动范围：受管 workflow 文件、受管 hooks、受管 runtime 与 release 元数据。\n"
+            f"- 实施步骤：{plan_steps}\n"
+            "- 预期验证：`git diff --check` 与 `scripts/check_release.py --json` 返回通过。\n"
+            f"- 已知风险/阻塞：{review_risk}\n\n"
             "## 变更文件\n\n"
             f"{changed_path_block}\n\n"
             "## 变更说明\n\n"
@@ -1359,9 +1426,11 @@ def submit_release_to_repo_via_worktree_commit(
                 cwd=resolved_repo_root,
                 env=worktree_env,
             )
-            branch, worktree_root, exec_id = _parse_new_worktree_output(
+            branch, worktree_root = _parse_new_worktree_output(
                 _command_output_summary(worktree_process) or worktree_process.stdout
             )
+            summary_text = f"chore(workflow): apply {resolved_profile}@{workflow_version}"
+            exec_id = _create_exec_in_worktree(worktree_root, summary_text)
         summary.update(
             {
                 "worktree_path": str(worktree_root),

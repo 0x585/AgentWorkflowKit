@@ -68,14 +68,10 @@ if [[ -x "$ROOT/.workflow-kit/ensure_shared_venv.sh" ]]; then
     echo "[new-worktree] Warning: failed to repair shared virtualenv link for ${worktree_path}" >&2
 fi
 
-exec_output="$(cd "$worktree_path" && "$ROOT/.workflow-kit/new_exec.sh")"
-exec_id="$(printf '%s\n' "$exec_output" | awk -F': ' '/^Execution ID: / {print $2; exit}')"
-
 echo "Created worktree:"
 echo "  branch: ${branch_name}"
 echo "  path:   ${worktree_path}"
-if [[ -n "$exec_id" ]]; then
-  echo "  exec:   ${exec_id}"
-fi
 echo ""
-echo "$exec_output"
+echo "Next step:"
+echo "  cd ${worktree_path}"
+echo "  ./.workflow-kit/start_exec.sh \"${input}\""

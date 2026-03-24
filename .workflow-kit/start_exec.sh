@@ -1,0 +1,308 @@
+#!/usr/bin/env bash
+# Managed by AgentWorkflowKit
+# Workflow-Version: 1.0.22
+# Do not edit in this repository.
+# Source profile/file id: .workflow-kit/start_exec.sh
+
+__workflow_guard_root="$(git rev-parse --show-toplevel 2>/dev/null || { cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd; })"
+if [[ "${WORKFLOW_GUARD_ACTIVE:-0}" != "1" ]]; then
+  exec "$__workflow_guard_root/.workflow-kit/workflow_guard.sh" "$0" "$@"
+fi
+unset __workflow_guard_root
+
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  ./.workflow-kit/start_exec.sh [--no-sync] <summary>
+  ./.workflow-kit/start_exec.sh [--no-sync] --summary <summary>
+  ./.workflow-kit/start_exec.sh --continue-exec <id> [--summary <summary>]
+
+Options:
+  --summary <text>        One-line summary written to the exec record and INDEX row.
+  --continue-exec <id>    Explicitly reuse the current worktree's unfinished exec.
+  --no-sync               Skip the default session sync when creating a new exec.
+  -h, --help              Show help.
+USAGE
+}
+
+ROOT="$(git rev-parse --show-toplevel)"
+ASSERT_PURPOSE=code "$ROOT/.workflow-kit/assert_workspace.sh"
+
+if [[ -x "$ROOT/scripts/python_bin.sh" ]]; then
+  PYTHON_BIN="${PYTHON_BIN:-$("$ROOT/scripts/python_bin.sh")}"
+else
+  PYTHON_BIN="${PYTHON_BIN:-$(command -v python3)}"
+fi
+if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
+  echo "[start-exec] Python runtime not available." >&2
+  exit 1
+fi
+
+SUMMARY=""
+CONTINUE_EXEC_ID=""
+RUN_SYNC=1
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --summary)
+      if [[ "$#" -lt 2 ]]; then
+        echo "[start-exec] Missing value for --summary" >&2
+        exit 1
+      fi
+      SUMMARY="$2"
+      shift 2
+      ;;
+    --continue-exec)
+      if [[ "$#" -lt 2 ]]; then
+        echo "[start-exec] Missing value for --continue-exec" >&2
+        exit 1
+      fi
+      CONTINUE_EXEC_ID="$2"
+      shift 2
+      ;;
+    --no-sync)
+      RUN_SYNC=0
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      if [[ -n "$SUMMARY" ]]; then
+        echo "[start-exec] Unexpected extra argument: $1" >&2
+        usage >&2
+        exit 1
+      fi
+      SUMMARY="$1"
+      shift
+      ;;
+  esac
+done
+
+active_exec_json="$(
+  ROOT="$ROOT" "$PYTHON_BIN" - <<'PY'
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+from pathlib import Path
+import os
+
+root = Path(os.environ["ROOT"])
+pattern = re.compile(r"^docs/exec_records/([0-9]{4,})(?:_commit\.txt|\.md)$")
+status = subprocess.run(
+    ["git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"],
+    check=True,
+    capture_output=True,
+    text=True,
+)
+active_exec_ids: list[int] = []
+seen: set[int] = set()
+for raw_line in status.stdout.splitlines():
+    if len(raw_line) < 4:
+        continue
+    path = raw_line[3:]
+    if " -> " in path:
+        path = path.split(" -> ", 1)[1]
+    match = pattern.fullmatch(path.strip())
+    if match is None:
+        continue
+    exec_id = int(match.group(1))
+    if exec_id in seen:
+        continue
+    seen.add(exec_id)
+    active_exec_ids.append(exec_id)
+print(json.dumps({"active_exec_ids": active_exec_ids}, ensure_ascii=False))
+PY
+)"
+
+active_exec_ids="$(
+  ACTIVE_EXEC_JSON="$active_exec_json" "$PYTHON_BIN" - <<'PY'
+from __future__ import annotations
+
+import json
+import os
+
+payload = json.loads(os.environ["ACTIVE_EXEC_JSON"])
+print(" ".join(str(value) for value in payload.get("active_exec_ids", [])))
+PY
+)"
+
+ensure_plan_block() {
+  local exec_id="$1"
+  local desired_work_type="$2"
+  local summary="${3:-}"
+  local force_reset="$4"
+  ROOT="$ROOT" EXEC_ID="$exec_id" DESIRED_WORK_TYPE="$desired_work_type" SUMMARY_TEXT="$summary" FORCE_RESET="$force_reset" "$PYTHON_BIN" - <<'PY'
+from __future__ import annotations
+
+import os
+import re
+from pathlib import Path
+
+root = Path(os.environ["ROOT"])
+exec_id = int(os.environ["EXEC_ID"])
+desired_work_type = os.environ["DESIRED_WORK_TYPE"]
+summary_text = os.environ["SUMMARY_TEXT"].strip()
+force_reset = os.environ["FORCE_RESET"] == "1"
+
+record_path = root / "docs" / "exec_records" / f"{exec_id}.md"
+index_path = root / "docs" / "exec_records" / "INDEX.md"
+text = record_path.read_text(encoding="utf-8")
+
+default_lines = [
+    "## 开工计划",
+    "",
+    f"- 工作类型：{desired_work_type}",
+    "- 目标：TODO",
+    "- 改动范围：TODO",
+    "- 实施步骤：1. TODO",
+    "- 预期验证：TODO",
+    "- 已知风险/阻塞：TODO",
+]
+default_section = "\n".join(default_lines) + "\n\n"
+
+section_pattern = re.compile(r"(^## 开工计划\n)(?P<body>.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
+work_type_pattern = re.compile(r"(?m)^- 工作类型：(?P<value>.*)$")
+
+match = section_pattern.search(text)
+if match is None:
+    insert_marker = "\n## 变更文件\n"
+    if insert_marker in text:
+        text = text.replace(insert_marker, "\n" + default_section + "## 变更文件\n", 1)
+    else:
+        text = text.rstrip() + "\n\n" + default_section
+elif force_reset:
+    text = text[: match.start()] + default_section + text[match.end() :]
+else:
+    body = match.group("body")
+    work_type_match = work_type_pattern.search(body)
+    current_work_type = work_type_match.group("value").strip() if work_type_match is not None else ""
+    if current_work_type != desired_work_type:
+        replacement = f"## 开工计划\n\n- 工作类型：{desired_work_type}\n"
+        if work_type_match is not None:
+            body = work_type_pattern.sub(f"- 工作类型：{desired_work_type}", body, count=1)
+        else:
+            body = f"- 工作类型：{desired_work_type}\n{body.lstrip()}"
+        text = text[: match.start()] + "## 开工计划\n" + body + text[match.end() :]
+
+summary_pattern = re.compile(r"(^## 需求摘要\n\n)(?P<body>.*?)(?=\n## |\Z)", re.MULTILINE | re.DOTALL)
+summary_match = summary_pattern.search(text)
+if summary_text and summary_match is not None:
+    current_summary = summary_match.group("body").strip()
+    if not current_summary or current_summary == "TODO":
+        text = text[: summary_match.start("body")] + summary_text + "\n" + text[summary_match.end("body") :]
+
+if summary_text and index_path.is_file():
+    lines = []
+    row_pattern = re.compile(rf"^(\|\s*{exec_id}\s*\|\s*[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}\s*\|\s*)(.*?)(\s*\|)\s*$")
+    for line in index_path.read_text(encoding="utf-8").splitlines():
+        match = row_pattern.match(line)
+        if match is not None and match.group(2).strip() == "TODO":
+            line = f"{match.group(1)}{summary_text}{match.group(3)}"
+        lines.append(line)
+    index_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+record_path.write_text(text, encoding="utf-8")
+PY
+}
+
+validate_plan() {
+  local exec_id="$1"
+  set +e
+  "$ROOT/.workflow-kit/check_exec_plan.py" --exec-id "$exec_id"
+  local exit_code=$?
+  set -e
+  return "$exit_code"
+}
+
+if [[ -n "$CONTINUE_EXEC_ID" ]]; then
+  if [[ "$CONTINUE_EXEC_ID" =~ [^0-9] ]]; then
+    echo "[start-exec] --continue-exec must be a numeric exec id." >&2
+    exit 1
+  fi
+  if [[ -n "$active_exec_ids" ]]; then
+    active_count="$(wc -w <<<"$active_exec_ids" | tr -d ' ')"
+    if [[ "$active_count" -gt 1 ]]; then
+      echo "[start-exec] Multiple active execs found in this worktree: $active_exec_ids" >&2
+      exit 1
+    fi
+    if [[ "$active_exec_ids" != "$CONTINUE_EXEC_ID" ]]; then
+      echo "[start-exec] Active exec does not match --continue-exec: $active_exec_ids" >&2
+      exit 1
+    fi
+  fi
+
+  record_file="$ROOT/docs/exec_records/${CONTINUE_EXEC_ID}.md"
+  if [[ ! -f "$record_file" ]]; then
+    echo "[start-exec] Execution record not found: $record_file" >&2
+    exit 1
+  fi
+  if git log --all --format=%s | awk -v id="$CONTINUE_EXEC_ID" '
+      BEGIN { found = 0 }
+      $0 ~ "^\\[" id "\\] " { found = 1 }
+      END { exit(found ? 0 : 1) }
+    '; then
+    echo "[start-exec] Cannot continue exec [${CONTINUE_EXEC_ID}] because it already exists in commit history." >&2
+    exit 1
+  fi
+
+  branch="$(git branch --show-current)"
+  ensure_plan_block "$CONTINUE_EXEC_ID" "续作(${branch}/${CONTINUE_EXEC_ID})" "$SUMMARY" 0
+  if validate_plan "$CONTINUE_EXEC_ID"; then
+    echo "Execution ID: $CONTINUE_EXEC_ID"
+    echo "Execution record path: $record_file"
+    exit 0
+  fi
+  echo "[start-exec] 已写入续作计划模板；补齐后重新运行本命令确认即可。" >&2
+  exit 2
+fi
+
+if [[ -z "$SUMMARY" ]]; then
+  echo "[start-exec] New exec requires a one-line summary." >&2
+  usage >&2
+  exit 1
+fi
+
+exec_id=""
+record_file=""
+if [[ -n "$active_exec_ids" ]]; then
+  active_count="$(wc -w <<<"$active_exec_ids" | tr -d ' ')"
+  if [[ "$active_count" -gt 1 ]]; then
+    echo "[start-exec] Multiple active execs found in this worktree: $active_exec_ids" >&2
+    exit 1
+  fi
+  exec_id="$active_exec_ids"
+  record_file="$ROOT/docs/exec_records/${exec_id}.md"
+  ensure_plan_block "$exec_id" "新需求" "$SUMMARY" 0
+else
+  new_exec_args=(--summary "$SUMMARY" --json)
+  if [[ "$RUN_SYNC" -eq 0 ]]; then
+    new_exec_args=(--no-sync "${new_exec_args[@]}")
+  fi
+  new_exec_json="$("$ROOT/.workflow-kit/new_exec.sh" "${new_exec_args[@]}")"
+  exec_id="$(
+    NEW_EXEC_JSON="$new_exec_json" "$PYTHON_BIN" - <<'PY'
+from __future__ import annotations
+
+import json
+import os
+
+payload = json.loads(os.environ["NEW_EXEC_JSON"])
+print(payload["exec_id"])
+PY
+)"
+  record_file="$ROOT/docs/exec_records/${exec_id}.md"
+fi
+
+if validate_plan "$exec_id"; then
+  echo "Execution ID: $exec_id"
+  echo "Execution record path: $record_file"
+  exit 0
+fi
+echo "[start-exec] 已创建开工记录模板；补齐 `## 开工计划` 后重新运行本命令确认即可。" >&2
+exit 2
