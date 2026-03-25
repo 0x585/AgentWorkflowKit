@@ -19,6 +19,7 @@ LEGACY_SCRIPT_WRAPPER_DIR = "scripts"
 MANAGED_RUNTIME_BASENAMES = (
     "workflow_guard.sh",
     "assert_workspace.sh",
+    "branch_name_policy.py",
     "prepare_commit.sh",
     "setup_githooks.sh",
     "git_default_branch.sh",
@@ -1422,7 +1423,7 @@ def submit_release_to_repo_via_worktree_commit(
         else:
             issue_slug = _downstream_issue_slug(workflow_version)
             worktree_process = _run_command(
-                [str(script_path), issue_slug],
+                [str(script_path), f"codex/{issue_slug}"],
                 cwd=resolved_repo_root,
                 env=worktree_env,
             )

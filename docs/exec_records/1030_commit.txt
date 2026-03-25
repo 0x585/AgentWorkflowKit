@@ -1,0 +1,22 @@
+[1030] feat(workflow): enforce descriptive branch naming
+
+# Changes
+# - add shared branch_name_policy helper for derive/validate and wire it into new_branch + assert_workspace code mode
+# - preserve explicit codex/workflow-release-* slugs in downstream worktree creation while rejecting vague or short manual branch names
+# - update workflow docs/templates/tests and publish full_codex_flow@1.0.31 release artifacts
+
+# Tests
+# - 命令：python3 -m py_compile .workflow-kit/branch_name_policy.py tests/test_workflow_release.py scripts/workflow_kit_lib.py; bash -n .workflow-kit/new_branch.sh .workflow-kit/new_worktree.sh .workflow-kit/assert_workspace.sh; python3 -m unittest tests.test_workflow_release; python3 scripts/export_templates.py --repo-id AgentWorkflowKit; python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.31; git diff --check; python3 - <<'PY' ... check release/lock version + helper entry
+# - 范围：branch naming runtime、模板导出、release 发布、workflow release 全量回归
+# - 结果：通过
+# - 未覆盖项：未在真实下游仓执行 apply_downstreams.py；未批量 rename / 清理历史短分支
+# - 提交快照：85f3fe496a942b690cc8a20a7fd7a7c12eae08fb48c50e1c4b6d3e8f346347b4
+
+# Review
+# - 审查方式：人工审查 git diff，重点核对 helper 规则、code-mode guard、downstream 显式 slug 透传与文档/模板/测试一致性
+# - 结论：未发现阻断问题
+# - 残余风险：runtime 仍无法阻止原生 git 直接创建短分支 ref；历史短分支需按文档 rename/cleanup
+# - 提交快照：85f3fe496a942b690cc8a20a7fd7a7c12eae08fb48c50e1c4b6d3e8f346347b4
+
+# Risks
+# - 若新规则误伤既有流程，整体回退本次提交并重新导出模板、发布后续 release 恢复旧行为

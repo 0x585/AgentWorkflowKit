@@ -258,6 +258,9 @@ if [[ "$ASSERT_PURPOSE" == "code" ]]; then
     echo "  hint: git switch -c codex/<name>" >&2
     exit 1
   fi
+  if ! "$ROOT/.workflow-kit/branch_name_policy.py" validate --branch "$BRANCH" --context guard; then
+    exit 1
+  fi
 fi
 
 if [[ "$ASSERT_PURPOSE" == "default" && -n "$BRANCH" ]]; then

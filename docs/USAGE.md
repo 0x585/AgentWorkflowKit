@@ -97,7 +97,9 @@
 
 对代码任务，先通过 `./.workflow-kit/start_exec.sh "<summary>"` 建立或确认当前 exec，并补齐 `## 开工计划`；只有 `开工计划` 校验通过后，才进入正式编码流程。若用户明确说明“继续原 worktree / 原 exec”，则显式使用 `./.workflow-kit/start_exec.sh --continue-exec <exec_id>`；不再为每个新需求自动扫描旧分支。
 
-中央仓和下游仓的代码任务分支统一使用能直接说明用途的 `codex/<purpose>` 命名；不要使用 `codex/help`、`codex/fix` 这类无法体现具体工作的模糊名称。当前这是一条 workflow 命名规则，不额外增加 runtime 校验。
+中央仓和下游仓的代码任务分支统一使用能直接说明用途的 `codex/<purpose>` 命名；不要使用 `codex/help`、`codex/fix`、`codex/pcr` 这类无法体现具体工作的模糊名称。现在这条规则已经由 runtime 强制执行：`new_branch.sh` / `new_worktree.sh` 会直接拒绝无语义候选名，`ASSERT_PURPOSE=code ./.workflow-kit/assert_workspace.sh` 也会阻止继续在这类分支上编码。
+
+如果仓库里还保留旧的短分支或误命名分支，升级到新 release 前先完成 rename 或清理；手工创建了旧短分支后，也需要先执行 `git branch -m codex/<descriptive-name>`，再继续 code-mode workflow。
 
 对代码任务，只要 `开工计划`、`验证结果`、`审查结果` 都已完成，且没有剩余 commit gate 阻塞，Codex 默认应在当前回合继续执行 `./.workflow-kit/prepare_task_commit.sh` 与 `git commit`，不要停在“已修改但未 commit”的状态；只有用户明确要求暂停，或 gate 尚未通过时，才保留未提交现场。
 
