@@ -2,6 +2,7 @@
 
 | ID | Date | Summary |
 |---|---|---|
+| 1030 | 2026-03-26 | enforce descriptive branch naming |
 | 1029 | 2026-03-25 | document branch naming rule |
 | 1028 | 2026-03-25 | feat(workflow): require explicit start plan and continuation |
 | 1027 | 2026-03-23 | fix(workflow): unify autorelease entrypoint |

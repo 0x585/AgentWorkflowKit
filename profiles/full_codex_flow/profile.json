@@ -60,6 +60,12 @@
     },
     {
       "type": "file",
+      "output": ".workflow-kit/branch_name_policy.py",
+      "template": "templates/full_codex_flow/files/.workflow-kit/branch_name_policy.py.tmpl",
+      "executable": true
+    },
+    {
+      "type": "file",
       "output": ".workflow-kit/prepare_commit.sh",
       "template": "templates/full_codex_flow/files/.workflow-kit/prepare_commit.sh.tmpl",
       "executable": true

@@ -191,6 +191,17 @@ class WorkflowReleaseTest(unittest.TestCase):
         shutil.copytree(self.workflow_root / "repos", workflow_root / "repos")
         shutil.copytree(self.workflow_root / "scripts", workflow_root / "scripts")
 
+    def bootstrap_workflow_source_copy(self, workflow_root: Path) -> None:
+        self.copy_workflow_repo(workflow_root)
+        self.copy_runtime_sources(workflow_root)
+        source_payload = load_json(self.workflow_root / ".workflow-kit" / "source.json")
+        source_payload["workflow_repo_root"] = str(workflow_root.resolve())
+        source_payload["expected_workspace_root"] = str(workflow_root.resolve())
+        source_payload["public_work_register_dir"] = str(
+            (workflow_root.parent / "PublicWorkRegister" / "AgentWorkflowKit").resolve()
+        )
+        write_json(workflow_root / ".workflow-kit" / "source.json", source_payload)
+
     def write_temp_repo_config(self, workflow_root: Path, repo_root: Path) -> dict[str, str]:
         resolved_repo_root = repo_root.resolve()
         repo_config = {
@@ -748,7 +759,7 @@ Run `./scripts/new_exec.sh`.
             self.assertIsNotNone(readme_block)
             self.assertIn("Full workflow rules: `./.workflow-kit/WORKFLOW_CONTRACT.md`.", str(agents_block))
             self.assertIn("Full workflow rules: `./.workflow-kit/WORKFLOW_CONTRACT.md`.", str(readme_block))
-            self.assertLessEqual(len(str(agents_block).splitlines()), 7)
+            self.assertLessEqual(len(str(agents_block).splitlines()), 9)
             self.assertLessEqual(len(str(readme_block).splitlines()), 5)
             self.assertNotIn("Workflow version", str(agents_block))
             self.assertNotIn("prepare_commit", str(readme_block))
@@ -1081,6 +1092,138 @@ Run `./scripts/new_exec.sh`.
                 text=True,
             )
             self.assertEqual("main", result.stdout.strip())
+
+    def test_publish_release_exports_branch_name_policy_helper(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.bootstrap_workflow_source_copy(workflow_root)
+
+            publish_result = subprocess.run(
+                [
+                    "python3",
+                    str(workflow_root / "scripts" / "publish_release.py"),
+                    "--profile",
+                    "full_codex_flow",
+                    "--version",
+                    "1.0.0",
+                ],
+                cwd=workflow_root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            summary = json.loads(publish_result.stdout)
+            self.assertEqual("1.0.0", summary["workflow_version"])
+            self.assertTrue((workflow_root / "templates" / "full_codex_flow" / "files" / ".workflow-kit" / "branch_name_policy.py.tmpl").is_file())
+
+            lock_payload = load_json(workflow_root / "profiles" / "full_codex_flow" / "managed-files.lock.json")
+            agent_task_entries = lock_payload["repositories"]["AgentTask"]["entries"]
+            entry_paths = {entry["path"] for entry in agent_task_entries}
+            self.assertIn(".workflow-kit/branch_name_policy.py", entry_paths)
+
+    def test_new_branch_derives_readable_slug_and_rejects_invalid_short_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.bootstrap_workflow_source_copy(workflow_root)
+            export_runtime_templates(workflow_root=workflow_root, repo_id="AgentWorkflowKit")
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+
+            derived = subprocess.run(
+                [str(repo_root / ".workflow-kit" / "new_branch.sh"), "--dry-run", "plan confirmation resolve"],
+                cwd=repo_root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual("codex/plan-confirmation-resolve", derived.stdout.strip().splitlines()[-1])
+            self.assertTrue((repo_root / ".workflow-kit" / "branch_name_policy.py").is_file())
+
+            explicit_slug = subprocess.run(
+                [str(repo_root / ".workflow-kit" / "new_branch.sh"), "--dry-run", "codex/workflow-release-1-0-1"],
+                cwd=repo_root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual("codex/workflow-release-1-0-1", explicit_slug.stdout.strip().splitlines()[-1])
+
+            vague = subprocess.run(
+                [str(repo_root / ".workflow-kit" / "new_branch.sh"), "--dry-run", "help"],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(1, vague.returncode)
+            self.assertIn("Branch purpose 'help' is too vague", vague.stderr)
+            self.assertIn("Use a descriptive codex/<purpose> name instead.", vague.stderr)
+
+            short_name = subprocess.run(
+                [str(repo_root / ".workflow-kit" / "new_branch.sh"), "--dry-run", "pcr"],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(1, short_name.returncode)
+            self.assertIn("Branch purpose 'pcr' is too short", short_name.stderr)
+
+    def test_new_worktree_rejects_invalid_branch_candidates_before_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.bootstrap_workflow_source_copy(workflow_root)
+            export_runtime_templates(workflow_root=workflow_root, repo_id="AgentWorkflowKit")
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+
+            result = subprocess.run(
+                [str(repo_root / ".workflow-kit" / "new_worktree.sh"), "help"],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(1, result.returncode)
+            self.assertIn("Branch purpose 'help' is too vague", result.stderr)
+            self.assertFalse((temp_root / "TempRepo-wt-help").exists())
+
+    def test_assert_workspace_rejects_non_descriptive_codex_branch_in_code_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.bootstrap_workflow_source_copy(workflow_root)
+            export_runtime_templates(workflow_root=workflow_root, repo_id="AgentWorkflowKit")
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/help",
+                worktree_suffix="help",
+            )
+
+            env = dict(os.environ)
+            env["ASSERT_PURPOSE"] = "code"
+            result = subprocess.run(
+                [str(worktree_root / ".workflow-kit" / "assert_workspace.sh")],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+            self.assertEqual(1, result.returncode)
+            self.assertIn("Branch purpose 'help' is too vague", result.stderr)
+            self.assertIn("git branch -m codex/<descriptive-name>", result.stderr)
 
     def test_workflow_guard_skips_release_check_when_entry_succeeds(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
