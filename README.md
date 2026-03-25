@@ -51,5 +51,5 @@ The central repository itself uses `/Users/pi/PyCharmProject/PublicWorkRegister/
 
 - This repository is managed by `full_codex_flow`.
 - Full workflow rules: `./.workflow-kit/WORKFLOW_CONTRACT.md`.
-- Workflow version: `1.0.22`; source metadata: `.workflow-kit/source.json`.
+- Workflow version: `1.0.30`; source metadata: `.workflow-kit/source.json`.
 <!-- workflow-kit:readme:end -->

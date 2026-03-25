@@ -1,6 +1,6 @@
 {
   "profile": "full_codex_flow",
-  "workflow_version": "1.0.22",
+  "workflow_version": "1.0.30",
   "source_repo_root": "/Users/pi/PyCharmProject/AgentWorkflowKit",
-  "release_manifest_hash": "5e72d67a57e9a7bc55bd5980f88d8e0cfaa0375c94d7cdda0ad862d2df6eb446"
+  "release_manifest_hash": "0b471f6a24d71f2ad504d3fad57d7479cdab33ad9c9f5a6d2bbf576b18dd6e0f"
 }
