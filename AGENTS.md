@@ -53,6 +53,7 @@ python3 scripts/publish_release.py --profile full_codex_flow --version <new-vers
 
 - Run `./.workflow-kit/assert_workspace.sh` before substantive work.
 - Code edits belong on `codex/*` managed worktrees rather than the primary/default-branch checkout.
+- Task branches must use descriptive `codex/<purpose>` names that make the work intent obvious; avoid vague suffixes such as `help` or `fix`.
 - For code changes, start with `./.workflow-kit/start_exec.sh "<summary>"`, complete `## 开工计划`, then follow `test -> review -> ./.workflow-kit/prepare_task_commit.sh -> git commit`.
 - Exec records must keep the required `验证结果` / `审查结果` field headers, but those field bodies may span multiple lines when needed.
 - Once validation/review passes and no commit gate remains, complete `./.workflow-kit/prepare_task_commit.sh -> git commit` in the same turn by default rather than stopping in a modified-but-uncommitted state.

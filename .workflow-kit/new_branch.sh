@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Managed by AgentWorkflowKit
-# Workflow-Version: 1.0.22
+# Workflow-Version: 1.0.30
 # Do not edit in this repository.
 # Source profile/file id: .workflow-kit/new_branch.sh
 

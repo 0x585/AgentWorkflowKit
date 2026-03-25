@@ -1,0 +1,27 @@
+[1029] docs(workflow): document branch naming rule
+
+# Changes
+# - Document the descriptive `codex/<purpose>` branch naming rule in central docs and the managed workflow contract.
+# - Publish `full_codex_flow@1.0.30` so downstream repos inherit the rule after apply.
+# - Sync the current central worktree runtime/install metadata from the old `1.0.22` state to `1.0.30`.
+
+# Tests
+# - 命令：python3 scripts/export_templates.py --repo-id AgentWorkflowKit
+# - 命令：python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.30
+# - 命令：python3 scripts/apply_release.py --repo-root /Users/pi/PyCharmProject/AgentWorkflowKit-wt-document-branch-naming --repo-id AgentWorkflowKit
+# - 命令：python3 scripts/check_release.py --repo-root /Users/pi/PyCharmProject/AgentWorkflowKit-wt-document-branch-naming --repo-id AgentWorkflowKit --json
+# - 命令：git diff --check
+# - 命令：rg -n 'codex/<purpose>|codex/help|codex/fix' AGENTS.md docs/USAGE.md .workflow-kit/WORKFLOW_CONTRACT.md templates/full_codex_flow/blocks/agents-workflow.md.tmpl templates/full_codex_flow/files/.workflow-kit/WORKFLOW_CONTRACT.md.tmpl
+# - 范围：central docs, managed contract/templates, release artifacts, and current worktree install state
+# - 结果：all commands succeeded; check_release=status=current and mismatches=[]
+# - 未覆盖项：did not run downstream apply; naming rule is documented but not runtime-enforced
+# - 提交快照：7e0c690a441865ec32783ea2b4c178771661953d2db99a689a5775c00de984d0
+
+# Review
+# - 审查方式：manual diff review of docs, templates, and release artifacts
+# - 结论：no blocking issues found
+# - 残余风险：existing vague branch names are not auto-remediated; downstream repos receive the rule after apply 1.0.30
+# - 提交快照：7e0c690a441865ec32783ea2b4c178771661953d2db99a689a5775c00de984d0
+
+# Risks
+# - This commit also syncs the central worktree from the old 1.0.22 managed baseline to 1.0.30 so the managed entrypoints and release metadata are aligned again.
