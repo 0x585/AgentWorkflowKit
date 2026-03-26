@@ -26,6 +26,14 @@
 - Use `./.workflow-kit/session_sync.sh <default-branch>` when you want to rebase a `codex/*` branch onto the latest default branch before release, for example to keep a linear history or shrink merge surface.
 - If merge or release conflicts pause automation, resume with `./.workflow-kit/session_release_resume.sh`.
 
+## Conflict Handling
+
+- When sync / merge / release conflicts pause automation, Codex should first resolve obvious non-business conflicts and continue the workflow instead of stopping immediately.
+- Safe conflicts to resolve by default include `docs/exec_records/*`, `INDEX.md`, release/version/manifest/lock generated artifacts, same-file edits that touch different sections, and obvious import ordering, whitespace, comment, or copy-only conflicts.
+- Stop and ask for human confirmation when both sides change the same business-logic hunk, when test semantics and implementation semantics move together, when the conflict touches API / schema / data migration behavior, or when any choice requires deciding which logic is correct.
+- For source-branch rebase conflicts, resolve the allowed files, `git add` them, then continue with `git rebase --continue`; use `git rebase --abort` if the rebase should be abandoned.
+- For primary merge conflicts, resolve the allowed files, `git add` them, then resume release cleanup with `./.workflow-kit/session_release_resume.sh`.
+
 ## Commit Gate Rules
 
 - Commit messages use `[<exec_id>] <type>(<scope>): <summary>`.

@@ -362,7 +362,14 @@ class WorkflowReleaseTest(unittest.TestCase):
         self.assertNotIn("AgentWorkflowKit", task_readme["content"])
         self.assertNotIn("/Users/pi/PyCharmProject/AgentWorkflowKit", task_readme["content"])
         self.assertEqual(task_contract["content"], transit_contract["content"])
+        self.assertIn(
+            "If sync / merge / release conflicts pause automation, first resolve obvious mechanical conflicts yourself;",
+            task_agents["content"],
+        )
         self.assertIn("## Required Flow", task_contract["content"])
+        self.assertIn("## Conflict Handling", task_contract["content"])
+        self.assertIn("Safe conflicts to resolve by default include `docs/exec_records/*`, `INDEX.md`", task_contract["content"])
+        self.assertIn("For source-branch rebase conflicts, resolve the allowed files", task_contract["content"])
         self.assertNotIn("/Users/pi/PyCharmProject/AgentWorkflowKit", task_contract["content"])
         self.assertIn("AGENT_TASK_PUBLIC_WORK_REGISTER_ROOT", task_service["content"])
         self.assertIn("AGENT_TRANSIT_STATION_PUBLIC_WORK_REGISTER_ROOT", transit_service["content"])
@@ -757,13 +764,20 @@ Run `./scripts/new_exec.sh`.
             self.assertIn("## Managed Workflow Contract", agents_text)
             self.assertIsNotNone(agents_block)
             self.assertIsNotNone(readme_block)
+            self.assertIn(
+                "If sync / merge / release conflicts pause automation, first resolve obvious mechanical conflicts yourself;",
+                str(agents_block),
+            )
             self.assertIn("Full workflow rules: `./.workflow-kit/WORKFLOW_CONTRACT.md`.", str(agents_block))
             self.assertIn("Full workflow rules: `./.workflow-kit/WORKFLOW_CONTRACT.md`.", str(readme_block))
-            self.assertLessEqual(len(str(agents_block).splitlines()), 9)
+            self.assertLessEqual(len(str(agents_block).splitlines()), 10)
             self.assertLessEqual(len(str(readme_block).splitlines()), 5)
             self.assertNotIn("Workflow version", str(agents_block))
             self.assertNotIn("prepare_commit", str(readme_block))
             self.assertIn("## Overview", contract_text)
+            self.assertIn("## Conflict Handling", contract_text)
+            self.assertIn("Stop and ask for human confirmation when both sides change the same business-logic hunk", contract_text)
+            self.assertIn("For primary merge conflicts, resolve the allowed files", contract_text)
             self.assertIn("## Troubleshooting Pointers", contract_text)
 
     def test_ensure_shared_venv_links_primary_virtualenv_into_worktree(self) -> None:
