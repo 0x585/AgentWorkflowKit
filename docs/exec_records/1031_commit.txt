@@ -1,0 +1,34 @@
+[1031] feat(workflow): allow direct autorelease merge on lagging branches
+
+# Changes
+# - Let `session_push_autorelease.sh` continue with a direct merge when source branches are `behind` or `diverged`, instead of hard-blocking on sync status.
+# - Update `pre-commit`, contract, AGENTS, and usage docs so `session_sync.sh` is described as an optional linearization tool rather than an autorelease prerequisite.
+# - Export templates and publish release `1.0.32`, plus add release tests for clean direct-merge and real conflict behavior.
+
+# Tests
+# - 命令：`bash -n .workflow-kit/session_push_autorelease.sh .githooks/pre-commit`
+# - 范围：中央 runtime shell 语法检查
+# - 结果：通过
+# - 未覆盖项：只覆盖 shell 语法，不覆盖 release 行为
+# - 命令：`python3 -m unittest tests.test_workflow_release`
+# - 范围：中央 workflow release 源码、模板导出、下游 apply / auto-release 回归，以及新增的 behind/diverged direct-merge 与 conflict 用例
+# - 结果：通过，`51 tests`
+# - 未覆盖项：尚未在本模板写入时确认 commit 后中央 auto-release 与 AgentTask downstream apply / smoke validation 的最终结果
+# - 命令：`python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.32`
+# - 范围：模板回写、release manifest 与 `1.0.32` 产物生成
+# - 结果：通过，生成 `release_manifest_hash=c1e38493071a6a3f993c9e68e722050cb3b954ad869af2370446f3a2c7449ca8`
+# - 未覆盖项：只保证 release 工件本地生成成功，不替代下游真实 apply
+# - 命令：`git diff --check`
+# - 范围：本次中央源码、模板和 release 产物 diff 格式检查
+# - 结果：通过
+# - 未覆盖项：不覆盖运行时语义，仅校验 patch 格式
+# - 提交快照：bcbf027277660fe41b2a84f8f00e0d32bb4320f4aac28105ac9e513d31c95696
+
+# Review
+# - 审查方式：人工自审 `session_push_autorelease.sh` / `pre-commit` / contract / usage / AGENTS 的关键 diff，并结合新增单测确认 behind/diverged clean merge 不再被 sync gate 提前拦截
+# - 结论：当前实现把“是否能合并”交回给 Git merge 本身判断，同时保留真实 conflict 的 state-file 和 resume 路径；行为与目标一致
+# - 残余风险：中央源仓 worktree 仍会被 `check_release.py` 识别为 `drift`；提交后还需要观察中央 auto-release 与 AgentTask downstream apply / smoke validation 是否完全按预期走通
+# - 提交快照：bcbf027277660fe41b2a84f8f00e0d32bb4320f4aac28105ac9e513d31c95696
+
+# Risks
+# - 放宽 sync gate 后，autorelease 会更频繁地直接进入 merge；如果维护者更偏好线性历史，需要主动使用 `session_sync.sh`。
