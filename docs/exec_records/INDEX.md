@@ -2,6 +2,7 @@
 
 | ID | Date | Summary |
 |---|---|---|
+| 1032 | 2026-03-27 | workflow conflict guidance docs |
 | 1031 | 2026-03-27 | autorelease direct merge on behind status |
 | 1030 | 2026-03-26 | enforce descriptive branch naming |
 | 1029 | 2026-03-25 | document branch naming rule |

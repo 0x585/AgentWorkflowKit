@@ -205,6 +205,7 @@ python3 scripts/apply_downstreams.py
 - `.githooks/pre-push` 继续保留，用于你手动执行 `git push` 时接管并改走同一条 autorelease 链路
 - `session_push_autorelease.sh` 会先完成 merge / push 默认分支，再调用 `python3 scripts/apply_downstreams.py`
 - 当 source branch 相对 `origin/<default-branch>` 为 `behind` 或 `diverged` 时，auto-release 默认仍会直接尝试 merge；只有真实 merge conflict 才会停下
+- 如果 automation 被 sync / merge / release 冲突打断，Codex 不应一看到冲突就停下；应先判断是否属于明显的非业务逻辑冲突，能解就先解，只有代码逻辑或语义冲突才需要人工确认
 - 如果你希望在发布前先把 source branch rebase 成线性历史，可以手动执行 `./.workflow-kit/session_sync.sh <default-branch>`
 - 只要当前 release 工件是最新的，中央仓库 auto-release 成功后会自动为需要更新的下游仓库创建 fan-out worktree，完成自动审查，并在无阻塞问题时直接把下游变更 merge 到各自默认分支
 - 如果你只是修改了源码但还没有发布新的 release，这个自动动作会拒绝执行，并提示先发布
@@ -218,9 +219,24 @@ python3 scripts/apply_downstreams.py
 
 常见场景：
 
-- merge conflict 已经在主仓出现，解决冲突并 `git add` 后，回到 source worktree 执行上面的恢复命令
+- source worktree 在 `session_sync.sh` / `git rebase` 阶段出现冲突时，先自行解决允许范围内的非业务逻辑冲突；处理后执行 `git add` + `git rebase --continue`，只有逻辑/语义冲突才停下人工确认
+- merge conflict 已经在主仓出现时，先自行解决允许范围内的非业务逻辑冲突；处理后 `git add`，再回到 source worktree 执行上面的恢复命令
 - 自动发布提示主仓 dirty，先按提示清理现场，再重新执行 `./.workflow-kit/session_push_autorelease.sh`
 - 如果你只是想在线性化 source branch 历史后再发布，可先手动执行 `./.workflow-kit/session_sync.sh <default-branch>`，再重新运行 auto-release
+
+允许 Codex 默认自行解决的冲突包括：
+
+- `docs/exec_records/*`、`INDEX.md`
+- release/version/manifest/lock 等生成产物
+- 同文件不同区块的机械性拼接
+- 明显的 import 排序、空白、注释、文案冲突
+
+以下冲突必须停下人工确认：
+
+- 同一段业务代码被双方同时改动
+- 测试语义和实现语义一起变化
+- API / schema / 数据迁移冲突
+- 任何需要判断“哪种逻辑才对”的冲突
 
 如果你临时不想触发自动应用，可以在当前命令前加：
 

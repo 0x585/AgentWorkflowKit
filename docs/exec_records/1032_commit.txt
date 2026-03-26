@@ -1,0 +1,34 @@
+[1032] docs(workflow): document conflict triage guidance
+
+# Changes
+# - Add a high-priority managed AGENTS rule telling Codex to resolve obvious mechanical sync/merge/release conflicts first and stop only for logic or semantic conflicts.
+# - Add a detailed `Conflict Handling` section to the managed workflow contract and sync the same maintainer guidance into central `AGENTS.md` and `docs/USAGE.md`.
+# - Publish `full_codex_flow@1.0.33` so downstream repositories receive the updated conflict-triage instructions.
+
+# Tests
+# - 命令：`python3 -m unittest tests.test_workflow_release`
+# - 范围：workflow 文档渲染、apply release、managed blocks 注入与 autorelease 回归
+# - 结果：通过，`Ran 51 tests in 170.013s`
+# - 未覆盖项：不覆盖下游仓在真实冲突场景中的人工处理质量，只验证受管文档与发布流程
+# - 命令：`python3 scripts/export_templates.py --repo-id AgentWorkflowKit`
+# - 范围：runtime -> template 导出，确保 `.workflow-kit/WORKFLOW_CONTRACT.md` 的文案同步到模板
+# - 结果：通过，`exported_template_count=29`
+# - 未覆盖项：不覆盖 release artifact 写入
+# - 命令：`python3 scripts/publish_release.py --profile full_codex_flow --version 1.0.33`
+# - 范围：生成 `full_codex_flow@1.0.33` release manifest 与 lock
+# - 结果：通过，`release_manifest_hash=26443dc68ec489166c52be90afbf188a607c86ef0e02a97fb884d946a1a49eeb`
+# - 未覆盖项：仅覆盖中央 release 产物生成，不替代提交后的 downstream apply
+# - 命令：`git diff --check`
+# - 范围：本次文档、测试与 release 产物 patch 格式检查
+# - 结果：通过
+# - 未覆盖项：不覆盖运行时语义
+# - 提交快照：991b2059be80d308a680bca037ca64667fcc7afe06ce39f8cac4d6f84aedbf10
+
+# Review
+# - 审查方式：人工自审 managed `AGENTS` block、contract、central `AGENTS` / `USAGE` 文案与对应测试断言，确认中央源仓说明与下游模板保持一致
+# - 结论：当前变更把“先自行解决非业务逻辑冲突、逻辑/语义冲突再人工确认”的规则同时写进入口摘要与详细 contract，覆盖中央与下游受管文档
+# - 残余风险：这次只改指令层，不会让 shell runtime 自动解冲突；真实行为仍依赖 Codex 读取这些受管文档后按规则执行
+# - 提交快照：991b2059be80d308a680bca037ca64667fcc7afe06ce39f8cac4d6f84aedbf10
+
+# Risks
+# - 新规则会传播到所有 `full_codex_flow` 下游仓，改变 Codex 在冲突场景下的默认停手时机。
