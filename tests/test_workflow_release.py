@@ -1581,6 +1581,50 @@ exit 42
             self.assertNotEqual(0, blocked_elsewhere.returncode)
             self.assertIn("Code edits are only allowed", blocked_elsewhere.stderr)
 
+    def test_pre_commit_warns_direct_merge_will_be_attempted_when_branch_is_behind(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/pre-commit-behind-warning",
+                worktree_suffix="pre-commit-behind-warning",
+            )
+
+            readme_path = repo_root / "README.md"
+            readme_path.write_text(
+                readme_path.read_text(encoding="utf-8") + "main-only\n",
+                encoding="utf-8",
+            )
+            self.git(repo_root, "add", "README.md")
+            self.git(
+                repo_root,
+                "commit",
+                "--no-verify",
+                "-m",
+                "advance main",
+                env={"SKIP_POST_COMMIT_AUTOMATION": "1", **os.environ},
+            )
+            self.git(repo_root, "push", "--no-verify", "origin", "main")
+
+            result = subprocess.run(
+                [str(worktree_root / ".githooks" / "pre-commit")],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env={"SKIP_PREPARE_COMMIT_GUARD": "1", **os.environ},
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("branch sync status is behind", result.stderr)
+            self.assertIn("Auto-release will attempt a direct merge into main", result.stderr)
+            self.assertIn("./.workflow-kit/session_sync.sh main", result.stderr)
+
     def test_post_commit_skip_post_commit_automation_exits_early(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             temp_root = Path(tmp_dir)
@@ -1661,6 +1705,153 @@ exit 42
                 ["--source-branch", "codex/post-commit-autorelease", "--target", "main"],
                 args,
             )
+
+    def test_session_push_autorelease_direct_merges_when_branch_is_diverged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/direct-merge-diverged",
+                worktree_suffix="direct-merge-diverged",
+            )
+
+            readme_path = repo_root / "README.md"
+            readme_path.write_text(
+                readme_path.read_text(encoding="utf-8") + "main-only\n",
+                encoding="utf-8",
+            )
+            self.git(repo_root, "add", "README.md")
+            self.git(
+                repo_root,
+                "commit",
+                "--no-verify",
+                "-m",
+                "advance main",
+                env={"SKIP_POST_COMMIT_AUTOMATION": "1", **os.environ},
+            )
+            self.git(repo_root, "push", "--no-verify", "origin", "main")
+
+            agents_path = worktree_root / "AGENTS.md"
+            agents_path.write_text(
+                agents_path.read_text(encoding="utf-8") + "branch-only\n",
+                encoding="utf-8",
+            )
+            self.git(worktree_root, "add", "AGENTS.md")
+            self.git(
+                worktree_root,
+                "commit",
+                "--no-verify",
+                "-m",
+                "branch advance",
+                env={"SKIP_POST_COMMIT_AUTOMATION": "1", **os.environ},
+            )
+
+            result = subprocess.run(
+                [
+                    str(worktree_root / ".workflow-kit" / "session_push_autorelease.sh"),
+                    "--source-branch",
+                    "codex/direct-merge-diverged",
+                    "--target",
+                    "main",
+                ],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("branch sync status is diverged", result.stderr.lower())
+            self.assertIn("attempting direct merge into main", result.stderr)
+            self.assertFalse(worktree_root.exists())
+            self.assertIn("branch-only", (repo_root / "AGENTS.md").read_text(encoding="utf-8"))
+            self.assertIn("main-only", (repo_root / "README.md").read_text(encoding="utf-8"))
+
+            head_subject = self.git(repo_root, "show", "-s", "--format=%s", "HEAD").stdout.strip()
+            head_parents = self.git(repo_root, "show", "-s", "--format=%P", "HEAD").stdout.strip().split()
+            remote_branch = self.git(repo_root, "ls-remote", "--heads", "origin", "codex/direct-merge-diverged")
+
+            self.assertEqual("Merge branch 'codex/direct-merge-diverged'", head_subject)
+            self.assertEqual(2, len(head_parents))
+            self.assertEqual("", remote_branch.stdout.strip())
+
+    def test_session_push_autorelease_reports_merge_conflict_when_diverged_branch_cannot_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            workflow_root = temp_root / "workflow"
+            self.copy_workflow_repo(workflow_root)
+
+            repo_root = temp_root / "TempRepo"
+            self.bootstrap_managed_repo(workflow_root, repo_root, repo_id="TempRepo", installed_version="1.0.0")
+            worktree_root = self.create_managed_worktree(
+                repo_root,
+                branch_name="codex/direct-merge-conflict",
+                worktree_suffix="direct-merge-conflict",
+            )
+
+            readme_path = repo_root / "README.md"
+            readme_path.write_text("# Temp Repo\nmain rewrite\n", encoding="utf-8")
+            self.git(repo_root, "add", "README.md")
+            self.git(
+                repo_root,
+                "commit",
+                "--no-verify",
+                "-m",
+                "main conflict",
+                env={"SKIP_POST_COMMIT_AUTOMATION": "1", **os.environ},
+            )
+            self.git(repo_root, "push", "--no-verify", "origin", "main")
+
+            branch_readme_path = worktree_root / "README.md"
+            branch_readme_path.write_text("# Temp Repo\nbranch rewrite\n", encoding="utf-8")
+            self.git(worktree_root, "add", "README.md")
+            self.git(
+                worktree_root,
+                "commit",
+                "--no-verify",
+                "-m",
+                "branch conflict",
+                env={"SKIP_POST_COMMIT_AUTOMATION": "1", **os.environ},
+            )
+
+            result = subprocess.run(
+                [
+                    str(worktree_root / ".workflow-kit" / "session_push_autorelease.sh"),
+                    "--source-branch",
+                    "codex/direct-merge-conflict",
+                    "--target",
+                    "main",
+                ],
+                cwd=worktree_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                env={"WORKFLOW_GUARD_ACTIVE": "1", **os.environ},
+            )
+
+            common_git_dir = Path(
+                self.git(repo_root, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip()
+            )
+            state_file = common_git_dir / "codex_release_state.json"
+
+            self.assertEqual(1, result.returncode)
+            self.assertIn("attempting direct merge into main", result.stderr)
+            self.assertNotIn("Run ./.workflow-kit/session_sync.sh", result.stderr)
+            self.assertIn("Merge conflict detected. Conflict context is preserved.", result.stdout)
+            self.assertTrue(state_file.is_file())
+
+            state_payload = json.loads(state_file.read_text(encoding="utf-8"))
+            self.assertEqual("conflict", state_payload["status"])
+            self.assertEqual("codex/direct-merge-conflict", state_payload["source_branch"])
+            self.assertEqual("main", state_payload["target_branch"])
+            self.assertIn("README.md", state_payload["conflict_files"])
+            self.assertEqual(str(repo_root.resolve()), state_payload["primary_root"])
+            self.assertEqual(str(worktree_root.resolve()), state_payload["source_worktree"])
 
     def test_session_push_autorelease_reports_pending_conflict_state_with_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -67,6 +67,6 @@ if [[ -x "$ROOT/.workflow-kit/session_sync_status.sh" ]]; then
   behind="$(printf '%s\n' "$sync_info" | awk -F= '$1=="behind" {print $2}')"
   if [[ "$sync_state" == "behind" || "$sync_state" == "diverged" ]]; then
     echo "[pre-commit] Warning: branch sync status is ${sync_state} (ahead=${ahead:-0}, behind=${behind:-0}) vs origin/${DEFAULT_BRANCH}." >&2
-    echo "[pre-commit] Recommended: ./.workflow-kit/session_sync.sh ${DEFAULT_BRANCH}" >&2
+    echo "[pre-commit] Auto-release will attempt a direct merge into ${DEFAULT_BRANCH}; run ./.workflow-kit/session_sync.sh ${DEFAULT_BRANCH} only if you want to linearize history first." >&2
   fi
 fi

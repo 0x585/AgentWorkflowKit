@@ -92,9 +92,8 @@ SYNC_STATUS="$(printf '%s\n' "$SYNC_INFO" | awk -F= '$1=="status" {print $2}')"
 SYNC_AHEAD="$(printf '%s\n' "$SYNC_INFO" | awk -F= '$1=="ahead" {print $2}')"
 SYNC_BEHIND="$(printf '%s\n' "$SYNC_INFO" | awk -F= '$1=="behind" {print $2}')"
 if [[ "$SYNC_STATUS" == "behind" || "$SYNC_STATUS" == "diverged" ]]; then
-  echo "[session-push-autorelease] Branch sync status is ${SYNC_STATUS} (ahead=${SYNC_AHEAD:-0}, behind=${SYNC_BEHIND:-0}) vs origin/${TARGET_BRANCH}." >&2
-  echo "[session-push-autorelease] Run ./.workflow-kit/session_sync.sh ${TARGET_BRANCH} before auto release." >&2
-  exit 1
+  echo "[session-push-autorelease] Branch sync status is ${SYNC_STATUS} (ahead=${SYNC_AHEAD:-0}, behind=${SYNC_BEHIND:-0}) vs origin/${TARGET_BRANCH}; attempting direct merge into ${TARGET_BRANCH}." >&2
+  echo "[session-push-autorelease] If you want a linear source-branch history first, run ./.workflow-kit/session_sync.sh ${TARGET_BRANCH} manually." >&2
 fi
 
 COMMON_GIT_DIR="$(git rev-parse --path-format=absolute --git-common-dir)"

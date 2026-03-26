@@ -23,7 +23,7 @@
 - `ASSERT_PURPOSE=code ./.workflow-kit/assert_workspace.sh` is the manual pre-edit guard.
 - In code mode, the guard requires a valid `codex/*` worktree and rejects detached `HEAD`, abnormal worktrees, or default-branch worktrees.
 - Task branches must use descriptive `codex/<purpose>` names that make the work intent obvious; official branch creation and code-mode guard now reject vague single-word purposes such as `help` / `fix` and other non-descriptive short names.
-- Use `./.workflow-kit/session_sync.sh <default-branch>` when auto-release reports `behind` or `diverged`.
+- Use `./.workflow-kit/session_sync.sh <default-branch>` when you want to rebase a `codex/*` branch onto the latest default branch before release, for example to keep a linear history or shrink merge surface.
 - If merge or release conflicts pause automation, resume with `./.workflow-kit/session_release_resume.sh`.
 
 ## Commit Gate Rules
